@@ -1,0 +1,47 @@
+# AI Trading Assistant - Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+httpx>=0.25.0
+
+# Telegram Bot
+python-telegram-bot>=20.6
+
+# AI Providers
+openai>=1.3.0
+anthropic>=0.7.0
+
+# Data Analysis
+pandas>=2.1.0
+numpy>=1.26.0
+yfinance>=0.2.31
+
+# Data Providers
+finnhub-python>=2.4.0
+requests>=2.31.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+psycopg2-binary>=2.9.0  # PostgreSQL driver
+aiosqlite>=0.19.0  # Async SQLite
+
+# Cache
+redis>=5.0.0
+
+# Configuration
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Scheduling
+apscheduler>=3.10.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# Logging
+structlog>=23.2.0
