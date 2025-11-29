@@ -10,7 +10,7 @@ This project is an AI-powered trading assistant built with reference to https://
 
 ## Current Phase: Strategy Backtesting Research
 
-### Status (as of 2025-11-28)
+### Status (as of 2025-11-29)
 
 **Completed:**
 1. Full SOP documentation in `docs/` (7 documents)
@@ -19,10 +19,12 @@ This project is an AI-powered trading assistant built with reference to https://
 4. Backtest framework v1 and v2 with enhanced features
 5. Jupyter notebook for interactive backtesting with visualizations
 6. Refactored all backtest files to `backtest/` folder
+7. **VCP Detection Algorithm** - Refined with proper swing high/low methodology
+8. **VCP Visualization Tool** - Charts for pattern review
 
-**Pending (to start 2025-11-29):**
-- Execute the Jupyter notebook backtest
-- Analyze results and optimize parameters
+**In Progress:**
+- VCP algorithm validation and testing
+- Integration with backtest framework
 
 ### Key Files
 
@@ -34,8 +36,27 @@ backtest/
 ├── run_backtest.py             # CLI runner v1
 ├── run_backtest_v2.py          # CLI runner v2
 ├── strategy_research_paper.md  # Strategy analysis document
-└── strategy_backtest.ipynb     # Interactive Jupyter notebook
+├── strategy_backtest.ipynb     # Interactive Jupyter notebook
+├── vcp_detector.py             # VCP pattern detection (NEW)
+├── visualize_vcp_review.py     # VCP chart generation (NEW)
+├── visualize_trades_enhanced.py # Trade visualization
+└── charts/
+    └── vcp_review/             # Generated VCP analysis charts
 ```
+
+### VCP Detection Algorithm (2025-11-29)
+
+**Algorithm Rules:**
+1. **Swing Detection**: 5-bar lookback for swing highs/lows
+2. **Contraction Identification**: Swing high → deepest low before recovery
+3. **Progressive Tightening**: Each contraction must be smaller % than previous
+4. **Consolidation Base**: Later highs max 3% above base (rejects staircases)
+5. **Time Proximity**: Max 30 trading days gap between contractions
+6. **Volume Dry-up**: Later contractions should show declining volume
+
+**Test Results (8 symbols):**
+- ✅ Valid: TSLA (4 contractions), NVDA, MSFT, AMZN (2 each)
+- ❌ Invalid: AAPL (staircase), GOOGL/AMD (loosening), META (downtrend)
 
 ### Backtest Configuration
 
@@ -71,25 +92,30 @@ A new metric measuring how close/continuous VCP contractions are:
    - Single contraction check vs sequential validation
    - Missing prior advance (30%+ in 2-3 months) verification
    - Volume confirmation not enforced at breakout
+4. **VCP Algorithm Refinement (2025-11-29)** - See `docs/vcp-algorithm-lessons-learned.md`:
+   - Validate high > low for contractions
+   - Capture full pullback depth (extend until recovery)
+   - Enforce progressive tightening strictly
+   - Reject staircase patterns (highs stepping higher)
+   - Image dimensions must stay under 2000px for API compatibility
 
 ### Git Repository
 
 - Remote: https://github.com/guardave/ai-trading-assistant.git
 - User: dawo (dawo.dev@idficient.com)
 
-## Next Session (2025-11-29)
+## Next Steps
 
-1. Open `backtest/strategy_backtest.ipynb` in Jupyter
-2. Execute cells sequentially to run backtests
-3. Review intermediate tables and charts
-4. Analyze proximity score correlation
-5. Compare trailing stop vs fixed target results
-6. Document findings and update strategy parameters
+1. Integrate VCP detector into backtest framework
+2. Run backtests with refined VCP detection
+3. Analyze proximity score correlation with trade outcomes
+4. Compare trailing stop vs fixed target results
+5. Document findings and optimize strategy parameters
 
 ## Technical Notes
 
 - Data source: yfinance (Yahoo Finance API)
 - Target universe: S&P 500, NASDAQ 100 (US stocks)
 - Historical period: 2020-2024 (adjustable)
-- Visualization: matplotlib, seaborn
+- Visualization: matplotlib, seaborn (max 2000px dimensions)
 - Analysis: pandas, numpy

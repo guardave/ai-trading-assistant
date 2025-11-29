@@ -219,7 +219,9 @@ def plot_trade_enhanced(trade: dict, rs_calculator: RSCalculator,
     contractions = vcp_detector.detect_contractions(df, entry_date)
 
     # Create figure
-    fig = plt.figure(figsize=(16, 14))
+    # Note: figsize * dpi must stay under 2000px for API compatibility
+    # Using figsize=(13, 12) with dpi=150 = 1950x1800 pixels (safe)
+    fig = plt.figure(figsize=(13, 12))
 
     # Layout: Price (top, large), Volume (middle), RS (bottom)
     ax1 = plt.subplot2grid((5, 1), (0, 0), rowspan=3)
