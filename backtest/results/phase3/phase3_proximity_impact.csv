@@ -1,0 +1,6 @@
+rs_threshold,trades_no_prox,trades_with_prox,trade_reduction,trade_reduction_pct,win_rate_no_prox,win_rate_with_prox,win_rate_change,profit_factor_no_prox,profit_factor_with_prox,profit_factor_change
+70,95,62,33,34.7,47.87,50.82,+2.95,1.09,1.31,+0.22
+75,81,53,28,34.6,48.15,47.17,-0.98,1.02,1.04,+0.03
+80,65,41,24,36.9,47.69,46.34,-1.35,0.98,1.02,+0.04
+85,46,30,16,34.8,50.00,50.00,+0.00,1.06,1.21,+0.15
+90,34,21,13,38.2,50.00,47.62,-2.38,0.88,0.92,+0.05

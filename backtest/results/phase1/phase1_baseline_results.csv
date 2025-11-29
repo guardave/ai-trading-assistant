@@ -1,0 +1,24 @@
+metric,value
+test_period,2022-01-01 to 2024-11-29
+stock_count,50
+baseline_fixed_total_trades,34
+baseline_fixed_win_rate,29.41
+baseline_fixed_avg_rr_realized,1.84
+baseline_fixed_profit_factor,0.76
+baseline_fixed_total_return_pct,-37.61
+baseline_fixed_avg_days_held,31.9
+baseline_trailing_total_trades,34
+baseline_trailing_win_rate,50.00
+baseline_trailing_avg_rr_realized,0.88
+baseline_trailing_profit_factor,0.88
+baseline_trailing_total_return_pct,-14.85
+baseline_trailing_avg_days_held,25.2
+adjusted_rr_total_trades,34
+adjusted_rr_win_rate,29.41
+adjusted_rr_avg_rr_realized,1.74
+adjusted_rr_profit_factor,0.72
+adjusted_rr_total_return_pct,-50.26
+adjusted_rr_avg_days_held,33.2
+proximity_correlation,0.114
+high_proximity_win_rate,36.4
+low_proximity_win_rate,N/A
