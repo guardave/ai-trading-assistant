@@ -553,8 +553,98 @@ pip-audit>=2.6.0
 
 ---
 
-## 12. Document History
+## 12. Multi-Agent Collaboration Framework
+
+### 12.1 Overview
+
+For complex testing tasks such as strategy backtesting, a multi-agent collaboration framework is employed to ensure quality and thoroughness. This framework uses specialized agents working in parallel with defined handoff protocols.
+
+### 12.2 Agent Roles
+
+| Agent | Role | Workspace | Responsibility |
+|-------|------|-----------|----------------|
+| **Supervisor** | Coordinator | N/A | Oversees agents, ensures SOP compliance, identifies blind spots |
+| **Executor** | Task Runner | `agents/executor/` | Executes tests, produces results, documents methodology |
+| **Reviewer** | Quality Assurance | `agents/reviewer/` | Validates results, checks methodology, flags issues |
+
+### 12.3 Workspace Structure
+
+```
+agents/
+├── AGENT_PROTOCOL.md           # Collaboration protocol (required reading)
+├── executor/
+│   ├── status.md               # Current execution status
+│   ├── execution_log.md        # Detailed execution log
+│   ├── results/                # Raw results (intermediate)
+│   └── handoff/                # Files ready for reviewer
+└── reviewer/
+    ├── status.md               # Current review status
+    ├── review_log.md           # Detailed review notes
+    ├── issues/                 # Identified issues
+    └── approved/               # Approved for final delivery
+```
+
+### 12.4 Communication Protocol
+
+**Handoff Mechanism:**
+1. Executor completes work → places in `executor/handoff/`
+2. Executor updates `executor/status.md` with handoff notice
+3. Reviewer monitors status, picks up handoff
+4. Reviewer validates → moves to `approved/` OR creates issue in `issues/`
+5. Supervisor moves approved work to final destination
+
+**Status File Requirements:**
+- Current phase and description
+- Timestamp of last update
+- Pending handoffs list
+- Blocking issues
+- Notes for other agents
+
+### 12.5 Quality Gates
+
+**Before Handoff (Executor):**
+- [ ] Results are complete and formatted
+- [ ] Execution log documents methodology
+- [ ] Status file updated with handoff notice
+
+**Before Approval (Reviewer):**
+- [ ] Methodology aligns with specifications
+- [ ] Results are statistically valid
+- [ ] No data quality issues detected
+- [ ] Success criteria met
+
+**Before Final Delivery (Supervisor):**
+- [ ] Both agents have signed off
+- [ ] Results are reproducible
+- [ ] Documentation is complete
+
+### 12.6 Issue Resolution
+
+1. **Technical Issues**: Reviewer creates `ISSUE_[phase]_[number].md` in `issues/`
+2. **Executor Response**: Must address before proceeding to next phase
+3. **Escalation**: Unresolved issues escalate to Supervisor
+4. **Documentation**: All issues and resolutions logged for future reference
+
+### 12.7 Cross-Agent Visibility
+
+Agents are permitted and encouraged to:
+- Inspect each other's workspace folders
+- Read status files for coordination
+- Reference execution logs for context
+- Review approved deliverables for consistency
+
+### 12.8 Final Deliverables
+
+Only Supervisor-approved work moves to production folders:
+- Test results → appropriate `results/` folder
+- Documentation → `docs/` folder
+- Validated findings → project-specific location
+
+---
+
+## 13. Document History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-11-28 | Claude | Initial draft |
+| 1.1.0 | 2025-11-29 | Claude | Added multi-agent collaboration framework (Section 12) |

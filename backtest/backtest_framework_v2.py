@@ -804,7 +804,11 @@ class Backtester:
             for idx in range(252, len(df) - 60):
                 check_date = df.index[idx]
 
-                if check_date < start_dt:
+                # Normalize timezone for comparison
+                check_date_normalized = check_date.tz_localize(None) if hasattr(check_date, 'tz_localize') and check_date.tzinfo else check_date
+                start_dt_normalized = start_dt.tz_localize(None) if hasattr(start_dt, 'tz_localize') and start_dt.tzinfo else start_dt
+
+                if check_date_normalized < start_dt_normalized:
                     continue
 
                 # Skip if too close to last signal
