@@ -178,6 +178,40 @@ This project is inspired by the [grok-trading-bot](https://github.com/nic-tsang0
 | FR-AN-06 | System shall implement cooldown periods for repeated alerts | Should Have |
 | FR-AN-07 | System shall send earnings warnings for positions | Could Have |
 
+### 4.8 Three-Stage VCP Alert System (FR-VCP)
+
+The VCP alert system provides progressive notifications as patterns develop, giving traders early warning and preparation time.
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-VCP-01 | System shall generate Contraction Alerts when a new qualified VCP contraction is detected (minimum 2 contractions, score >= 60) | Must Have |
+| FR-VCP-02 | System shall generate Pre-Alerts when price moves within 3% of the pivot price | Must Have |
+| FR-VCP-03 | System shall generate Trade Alerts when entry signal triggers (handle break, pivot breakout) | Must Have |
+| FR-VCP-04 | System shall track alert chains linking contraction → pre-alert → trade alerts | Must Have |
+| FR-VCP-05 | System shall persist all alerts with timestamps for historical analysis | Must Have |
+| FR-VCP-06 | System shall prevent duplicate alerts for the same pattern/day | Must Have |
+| FR-VCP-07 | System shall expire stale alerts (contraction: 20 days, pre-alert: 5 days) | Must Have |
+| FR-VCP-08 | System shall support multiple notification channels per alert type | Should Have |
+| FR-VCP-09 | System shall provide alert history queries with filtering | Should Have |
+| FR-VCP-10 | System shall calculate conversion statistics (contraction → pre-alert → trade rates) | Should Have |
+
+**Alert Stage Definitions:**
+
+1. **Contraction Alert** (Earliest Signal)
+   - Triggered when VCP pattern forms a new qualified contraction
+   - Purpose: Build watchlist, begin due diligence
+   - Average lead time: 8-10 trading days before trade
+
+2. **Pre-Alert** (Imminent Signal)
+   - Triggered when price approaches within 3% of pivot
+   - Purpose: Watch closely, prepare position sizing, set alerts
+   - Average lead time: 3-7 trading days before trade
+
+3. **Trade Alert** (Action Signal)
+   - Triggered when entry conditions met (breakout with volume)
+   - Purpose: Execute trade
+   - Lead time: Same day (EOD) or next day (SOD)
+
 ---
 
 ## 5. Non-Functional Requirements

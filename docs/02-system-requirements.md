@@ -907,6 +907,232 @@ AND timing requirements should be met
 
 ---
 
+## 5. VCP Alert System Specifications
+
+### 5.1 Alert Data Models
+
+**SRS-ALERT-001: Alert Entity** [P0]
+```
+GIVEN an alert is created in the system
+THEN it must contain:
+  - id: UUID (unique identifier)
+  - symbol: str (stock symbol)
+  - alert_type: enum (CONTRACTION | PRE_ALERT | TRADE)
+  - state: enum (PENDING | NOTIFIED | CONVERTED | EXPIRED | COMPLETED)
+  - created_at: datetime (when alert was generated)
+  - updated_at: datetime (last state change)
+  - converted_at: datetime (when converted to next stage, nullable)
+  - expired_at: datetime (when alert expired, nullable)
+  - parent_alert_id: UUID (link to parent alert, nullable)
+  - pattern_snapshot: JSON (VCP pattern state at alert time)
+  - trigger_price: float (price when alert triggered)
+  - pivot_price: float (pivot price at alert time)
+  - distance_to_pivot_pct: float (distance from pivot)
+  - score: float (pattern score at alert time)
+```
+
+**SRS-ALERT-002: Alert Chain** [P0]
+```
+GIVEN a trade alert exists
+WHEN the alert chain is queried
+THEN the system should return:
+  - The originating contraction alert (if any)
+  - All pre-alerts in the sequence
+  - The trade alert
+  - Total lead time from first alert to trade
+```
+
+### 5.2 VCP Detector
+
+**SRS-VCP-001: Pattern Detection** [P0]
+```
+GIVEN a DataFrame with OHLCV data for a symbol
+WHEN analyze(df) is called
+THEN it should return Optional[VCPPattern] containing:
+  - contractions: List of detected contractions with dates and percentages
+  - pivot_price: float
+  - overall_score: float (0-100)
+  - entry_signals: List of potential entry types (handle, pivot_breakout)
+  - is_valid: bool
+AND return None if no valid pattern detected
+```
+
+**SRS-VCP-002: Contraction Validation** [P0]
+```
+GIVEN a potential VCP pattern
+WHEN contractions are validated
+THEN each contraction must have:
+  - High price > Low price
+  - Progressive tightening (each contraction smaller than previous)
+  - Time proximity (max 30 trading days between contractions)
+  - No staircase pattern (later highs not stepping higher)
+```
+
+### 5.3 Alert Manager
+
+**SRS-AM-001: Contraction Alert Generation** [P0]
+```
+GIVEN a VCP pattern with num_contractions >= 2
+AND pattern overall_score >= 60
+AND no existing active contraction alert for this symbol
+WHEN check_contraction_alert() is called
+THEN a new CONTRACTION alert should be created
+AND persisted to the repository
+AND subscribers should be notified
+```
+
+**SRS-AM-002: Pre-Alert Generation** [P0]
+```
+GIVEN a valid VCP pattern
+AND current price is within 3% of pivot price
+AND no existing active pre-alert for this symbol/date
+WHEN check_pre_alert() is called
+THEN a new PRE_ALERT should be created
+AND any active contraction alert should be marked CONVERTED
+AND persisted to the repository
+AND subscribers should be notified
+```
+
+**SRS-AM-003: Trade Alert Generation** [P0]
+```
+GIVEN a valid VCP pattern with entry signal triggered
+AND breakout criteria met (volume, price action)
+WHEN check_trade_alert() is called
+THEN a new TRADE alert should be created
+AND any active pre-alert should be marked CONVERTED
+AND persisted to the repository
+AND subscribers should be notified
+```
+
+**SRS-AM-004: Alert Deduplication** [P0]
+```
+GIVEN an alert already exists for symbol/type/date
+WHEN a new alert would be created with same parameters
+THEN no duplicate alert should be created
+AND the existing alert should be returned
+```
+
+**SRS-AM-005: Alert Expiration** [P0]
+```
+GIVEN a PENDING contraction alert older than 20 trading days
+OR a PENDING pre-alert older than 5 trading days
+WHEN expire_stale_alerts() is called
+THEN the alert state should change to EXPIRED
+AND expired_at timestamp should be set
+```
+
+**SRS-AM-006: Alert History Query** [P0]
+```
+GIVEN alerts exist in the repository
+WHEN get_alert_history(symbol, alert_type, start_date, end_date, state) is called
+THEN alerts matching all provided filters should be returned
+AND results should be sorted by created_at descending
+```
+
+**SRS-AM-007: Subscriber Notification** [P0]
+```
+GIVEN one or more handlers are subscribed via subscribe()
+WHEN a new alert is created
+THEN all subscribed handlers should be called with the alert
+AND notification should be asynchronous (non-blocking)
+```
+
+### 5.4 Alert Repository
+
+**SRS-REPO-001: Alert Persistence** [P0]
+```
+GIVEN a valid Alert object
+WHEN save(alert) is called
+THEN the alert should be persisted to storage
+AND be retrievable via get_by_id(alert_id)
+```
+
+**SRS-REPO-002: Alert Update** [P0]
+```
+GIVEN an existing alert
+WHEN update(alert) is called with modified state
+THEN the alert should be updated in storage
+AND updated_at timestamp should be refreshed
+```
+
+**SRS-REPO-003: Query by Symbol** [P0]
+```
+GIVEN alerts exist for multiple symbols
+WHEN query(symbol="NVDA") is called
+THEN only alerts for NVDA should be returned
+```
+
+**SRS-REPO-004: Query by State** [P0]
+```
+GIVEN alerts exist in various states
+WHEN query(state=PENDING) is called
+THEN only PENDING alerts should be returned
+```
+
+**SRS-REPO-005: Query by Date Range** [P0]
+```
+GIVEN alerts exist across different dates
+WHEN query(start_date, end_date) is called
+THEN only alerts with created_at in range should be returned
+```
+
+### 5.5 Notification Hub
+
+**SRS-NOTIFY-001: Channel Registration** [P0]
+```
+GIVEN a NotificationChannel implementation
+WHEN register_channel(channel) is called
+THEN the channel should be available for dispatching
+```
+
+**SRS-NOTIFY-002: Alert Dispatch** [P0]
+```
+GIVEN one or more channels are registered
+WHEN dispatch(alert) is called
+THEN each channel's send(alert) method should be called
+AND failures in one channel should not block others
+```
+
+**SRS-NOTIFY-003: Channel Filtering** [P0]
+```
+GIVEN channels have alert_type preferences configured
+WHEN dispatch(alert) is called
+THEN only channels configured for that alert_type should receive it
+```
+
+### 5.6 Alert System Integration
+
+**SRS-SYS-001: Symbol Processing** [P0]
+```
+GIVEN a symbol and its price DataFrame
+WHEN process_symbol(symbol, df) is called on VCPAlertSystem
+THEN the detector should analyze for patterns
+AND AlertManager should check for all alert conditions
+AND any new alerts should trigger notifications
+```
+
+**SRS-SYS-002: Scanner Loop** [P1]
+```
+GIVEN a list of symbols and scan interval
+WHEN run_scanner(symbols, interval) is called
+THEN each symbol should be processed at the specified interval
+AND the loop should handle errors gracefully without stopping
+AND scan progress should be logged
+```
+
+**SRS-SYS-003: Startup Initialization** [P0]
+```
+GIVEN the VCPAlertSystem is initialized
+WHEN start() is called
+THEN:
+  1. Repository connection should be established
+  2. Stale alerts should be expired
+  3. Active alerts should be loaded into memory
+  4. Notification channels should be initialized
+```
+
+---
+
 ## 6. Document History
 
 | Version | Date | Author | Changes |

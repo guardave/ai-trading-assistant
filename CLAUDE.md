@@ -8,7 +8,7 @@ This project is an AI-powered trading assistant built with reference to https://
 - **Plugin-based Strategies**: Extensible strategy system
 - **Scalable Database**: SQLite for dev, PostgreSQL for production
 
-## Current Phase: Strategy Backtesting Research
+## Current Phase: VCP Alert System Implementation
 
 ### Status (as of 2025-11-30)
 
@@ -22,9 +22,11 @@ This project is an AI-powered trading assistant built with reference to https://
 7. **VCP Detection Algorithm** - Refined with proper swing high/low methodology
 8. **VCP Visualization Tool** - Charts for pattern review
 9. **Backtest V3** - New backtest script using refined VCP detector
-
-**Completed:**
 10. **Comprehensive Analysis** - V2 vs V3 comparison, market filter, extended history, trailing stop optimization
+11. **Three-Stage Alert System Backtest** - Contraction → Pre-Alert → Trade alert flow validated
+12. **Documentation Updated** - Business requirements, system requirements, system design for VCPAlertSystem
+
+**Next: VCPAlertSystem Implementation**
 
 ### Key Files
 
@@ -34,8 +36,10 @@ backtest/
 ├── backtest_framework.py       # Base backtest engine
 ├── backtest_framework_v2.py    # Enhanced with proximity analysis (V2 detector)
 ├── run_backtest_v3.py          # Uses refined VCP detector (V3)
+├── run_backtest_dual_alert.py  # Three-stage alert system backtest
 ├── vcp_detector.py             # Refined VCP pattern detection
-├── comprehensive_analysis.py   # NEW: Full comparison analysis script
+├── vcp_detector_v5.py          # V5 detector with entry types
+├── comprehensive_analysis.py   # Full comparison analysis script
 ├── visualize_vcp_review.py     # VCP chart generation
 ├── visualize_trades_enhanced.py # Trade visualization
 └── charts/
@@ -43,9 +47,22 @@ backtest/
 
 results/
 ├── v3/                         # V3 backtest results
-└── comprehensive_analysis/     # NEW: Full analysis with charts
-    ├── summary.csv             # All configurations summary
-    └── charts/                 # Comparison charts
+├── comprehensive_analysis/     # Full analysis with charts
+├── entry_timing/               # EOD vs SOD entry comparison
+└── three_stage_alert/          # Three-stage alert backtest results
+    ├── contraction_alerts.csv  # All contraction alerts
+    ├── pre_alerts.csv          # All pre-alerts
+    ├── trades.csv              # All trades with alert linkage
+    ├── summary.json            # Statistics summary
+    └── charts/                 # Sample trade charts
+
+src/vcp/                        # (TO BE IMPLEMENTED)
+├── models.py                   # Alert, AlertChain, VCPPattern
+├── detector.py                 # VCPDetector class
+├── alert_manager.py            # AlertManager class
+├── repository.py               # AlertRepository (SQLite)
+├── notifications.py            # NotificationHub + channels
+└── alert_system.py             # VCPAlertSystem orchestrator
 ```
 
 ### VCP Detection Algorithm (2025-11-29)
@@ -137,13 +154,50 @@ See `docs/backtest-v3-results.md` for full analysis.
 
 See `docs/comprehensive-analysis-report.md` for full analysis.
 
-## Next Steps
+### Three-Stage Alert System Results (2025-11-30)
 
-1. **Investigate V2 algorithm**: Understand why rolling window method produces more profitable patterns
-2. **Hybrid approach**: Consider using V3 pattern quality scoring with V2 detection
-3. **Position sizing**: Test Kelly criterion or volatility-based sizing
-4. **Walk-forward optimization**: Validate parameters don't overfit
-5. **Live paper trading**: Test V2 configuration in real-time
+**Backtest Period:** 2020-2024, 66 symbols
+
+**Stage Statistics:**
+| Stage | Sequences | Total Alerts | Avg per Seq | Conversion Rate |
+|-------|-----------|--------------|-------------|-----------------|
+| Contraction | 357 | 367 | 1.0 | 24.6% to trade |
+| Pre-Alert | 147 | 570 | 3.9 | 21.1% to trade |
+| Trade | 108 | 108 | - | - |
+
+**Win Rates by Alert Type:**
+| Alert Combination | Win Rate |
+|-------------------|----------|
+| Both alerts (Contr + Pre) | 71.4% |
+| Pre-Alert only | 74.2% |
+| Contraction only | 68.2% |
+| No prior alerts | 70.6% |
+
+**Key Findings:**
+- Pre-alerts have highest win rate (74.2%) - extra review time helps
+- Average lead time: Contraction→Trade = 8.5 days, Pre-Alert→Trade = 5.7 days
+- Profit factor: 1.83, Total return: 250.6%
+
+See `docs/three-stage-alert-backtest-results.md` for full analysis.
+
+## Next Steps: VCPAlertSystem Implementation
+
+### Implementation Plan
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Core Data Models (`src/vcp/models.py`) | Pending |
+| 2 | Repository Layer (`src/vcp/repository.py`) | Pending |
+| 3 | Alert Manager (`src/vcp/alert_manager.py`) | Pending |
+| 4 | VCP Detector Refactor (`src/vcp/detector.py`) | Pending |
+| 5 | Notification Hub (`src/vcp/notifications.py`) | Pending |
+| 6 | Main Orchestrator (`src/vcp/alert_system.py`) | Pending |
+| 7 | Integration & Testing | Pending |
+
+### Design Documents
+- Business Requirements: `docs/01-business-requirements.md` (Section 4.8)
+- System Requirements: `docs/02-system-requirements.md` (Section 5)
+- System Design: `docs/03-system-design.md` (Section 8)
 
 ## Technical Notes
 

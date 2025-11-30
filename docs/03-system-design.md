@@ -962,6 +962,341 @@ GET /health
 
 ---
 
+## 8. VCP Alert System Design
+
+### 8.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         VCPAlertSystem                              │
+│  (Main orchestrator - coordinates detection, alerts, notifications) │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          ▼                        ▼                        ▼
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│   VCPDetector    │    │   AlertManager   │    │ NotificationHub  │
+│                  │    │                  │    │                  │
+│ - analyze()      │    │ - check_alerts() │    │ - dispatch()     │
+│ - get_pattern()  │───▶│ - persist()      │───▶│ - telegram()     │
+│ - get_entries()  │    │ - deduplicate()  │    │ - discord()      │
+└──────────────────┘    │ - track_state()  │    │ - webhook()      │
+                        │ - get_history()  │    └──────────────────┘
+                        └──────────────────┘
+                                   │
+                                   ▼
+                        ┌──────────────────┐
+                        │  AlertRepository │
+                        │   (Database)     │
+                        │                  │
+                        │ - save()         │
+                        │ - query()        │
+                        │ - update()       │
+                        └──────────────────┘
+```
+
+### 8.2 Component Design
+
+#### 8.2.1 VCPDetector
+
+```
+┌──────────────────────────────────────┐
+│            VCPDetector               │
+├──────────────────────────────────────┤
+│ - lookback_days: int = 120           │
+│ - min_contractions: int = 2          │
+│ - swing_lookback: int = 5            │
+│ - max_contraction_gap: int = 30      │
+├──────────────────────────────────────┤
+│ + analyze(df: DataFrame) -> Optional[VCPPattern]           │
+│ + detect_contractions(df) -> List[Contraction]             │
+│ + calculate_score(pattern) -> float                        │
+│ + get_entry_signals(pattern, df) -> List[EntrySignal]      │
+└──────────────────────────────────────┘
+```
+
+#### 8.2.2 AlertManager
+
+```
+┌──────────────────────────────────────┐
+│           AlertManager               │
+├──────────────────────────────────────┤
+│ - repository: AlertRepository        │
+│ - subscribers: List[Callable]        │
+│ - config: AlertConfig                │
+├──────────────────────────────────────┤
+│ + check_and_emit(pattern) -> List[Alert]                   │
+│ + check_contraction_alert(pattern) -> Optional[Alert]      │
+│ + check_pre_alert(pattern, price) -> Optional[Alert]       │
+│ + check_trade_alert(pattern, signal) -> Optional[Alert]    │
+│ + mark_converted(alert_id, child_id) -> None               │
+│ + expire_stale_alerts() -> int                             │
+│ + get_alert_history(...) -> List[Alert]                    │
+│ + get_active_alerts(symbol) -> List[Alert]                 │
+│ + get_alert_chain(alert_id) -> AlertChain                  │
+│ + subscribe(handler: Callable) -> None                     │
+│ - _notify(alert: Alert) -> None                            │
+│ - _deduplicate(alert: Alert) -> bool                       │
+└──────────────────────────────────────┘
+```
+
+#### 8.2.3 AlertRepository
+
+```
+┌──────────────────────────────────────┐
+│    <<interface>> AlertRepository     │
+├──────────────────────────────────────┤
+│ + save(alert: Alert) -> None                               │
+│ + get_by_id(alert_id: str) -> Optional[Alert]              │
+│ + update(alert: Alert) -> None                             │
+│ + delete(alert_id: str) -> None                            │
+│ + query(                                                   │
+│     symbol: Optional[str],                                 │
+│     alert_type: Optional[AlertType],                       │
+│     state: Optional[AlertState],                           │
+│     start_date: Optional[datetime],                        │
+│     end_date: Optional[datetime],                          │
+│     parent_alert_id: Optional[str]                         │
+│   ) -> List[Alert]                                         │
+│ + get_children(parent_id: str) -> List[Alert]              │
+│ + get_expiring(before: datetime) -> List[Alert]            │
+└──────────────────────────────────────┘
+          △
+          │
+    ┌─────┴─────┐
+    │           │
+┌───┴───────┐ ┌─┴───────────┐
+│ SQLite    │ │ PostgreSQL  │
+│ Repository│ │ Repository  │
+└───────────┘ └─────────────┘
+```
+
+#### 8.2.4 NotificationHub
+
+```
+┌──────────────────────────────────────┐
+│          NotificationHub             │
+├──────────────────────────────────────┤
+│ - channels: List[NotificationChannel]│
+├──────────────────────────────────────┤
+│ + register_channel(channel) -> None  │
+│ + dispatch(alert: Alert) -> None     │
+│ + dispatch_async(alert: Alert) -> None │
+└──────────────────────────────────────┘
+                    │
+                    │ uses
+                    ▼
+┌──────────────────────────────────────┐
+│  <<interface>> NotificationChannel   │
+├──────────────────────────────────────┤
+│ + name: str                          │
+│ + alert_types: List[AlertType]       │
+├──────────────────────────────────────┤
+│ + send(alert: Alert) -> bool         │
+│ + format_message(alert) -> str       │
+└──────────────────────────────────────┘
+          △           △           △
+          │           │           │
+    ┌─────┴───┐ ┌─────┴───┐ ┌─────┴───┐
+    │Telegram │ │Discord  │ │Webhook  │
+    │Channel  │ │Channel  │ │Channel  │
+    └─────────┘ └─────────┘ └─────────┘
+```
+
+### 8.3 Data Models
+
+```python
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Optional, List
+import uuid
+
+class AlertType(Enum):
+    CONTRACTION = "contraction"
+    PRE_ALERT = "pre_alert"
+    TRADE = "trade"
+
+class AlertState(Enum):
+    PENDING = "pending"
+    NOTIFIED = "notified"
+    CONVERTED = "converted"
+    EXPIRED = "expired"
+    COMPLETED = "completed"
+
+@dataclass
+class Alert:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    symbol: str
+    alert_type: AlertType
+    state: AlertState = AlertState.PENDING
+
+    # Timestamps
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    converted_at: Optional[datetime] = None
+    expired_at: Optional[datetime] = None
+
+    # Linkage
+    parent_alert_id: Optional[str] = None
+
+    # Pattern data at alert time
+    trigger_price: float
+    pivot_price: float
+    distance_to_pivot_pct: float
+    score: float
+    num_contractions: int
+    pattern_snapshot: dict = field(default_factory=dict)
+
+@dataclass
+class AlertChain:
+    symbol: str
+    contraction_alert: Optional[Alert] = None
+    pre_alerts: List[Alert] = field(default_factory=list)
+    trade_alert: Optional[Alert] = None
+
+    @property
+    def total_lead_time_days(self) -> Optional[int]:
+        if self.contraction_alert and self.trade_alert:
+            delta = self.trade_alert.created_at - self.contraction_alert.created_at
+            return delta.days
+        return None
+
+@dataclass
+class ConversionStats:
+    period_start: datetime
+    period_end: datetime
+    total_contraction_alerts: int
+    total_pre_alerts: int
+    total_trade_alerts: int
+    contraction_to_pre_alert_rate: float
+    contraction_to_trade_rate: float
+    pre_alert_to_trade_rate: float
+    avg_days_contraction_to_trade: float
+    avg_days_pre_alert_to_trade: float
+```
+
+### 8.4 Database Schema
+
+```sql
+-- VCP Alerts table (extends existing alerts table)
+CREATE TABLE vcp_alerts (
+    id VARCHAR(36) PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    alert_type VARCHAR(20) NOT NULL,  -- contraction, pre_alert, trade
+    state VARCHAR(20) NOT NULL DEFAULT 'pending',
+
+    -- Timestamps
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    converted_at TIMESTAMP,
+    expired_at TIMESTAMP,
+
+    -- Linkage
+    parent_alert_id VARCHAR(36) REFERENCES vcp_alerts(id),
+
+    -- Pattern data
+    trigger_price DECIMAL(12,4) NOT NULL,
+    pivot_price DECIMAL(12,4) NOT NULL,
+    distance_to_pivot_pct DECIMAL(8,4) NOT NULL,
+    score DECIMAL(5,2) NOT NULL,
+    num_contractions INTEGER NOT NULL,
+    pattern_snapshot JSON,
+
+    -- Indexes
+    CONSTRAINT valid_alert_type CHECK (alert_type IN ('contraction', 'pre_alert', 'trade')),
+    CONSTRAINT valid_state CHECK (state IN ('pending', 'notified', 'converted', 'expired', 'completed'))
+);
+
+CREATE INDEX idx_vcp_alerts_symbol ON vcp_alerts(symbol);
+CREATE INDEX idx_vcp_alerts_type_state ON vcp_alerts(alert_type, state);
+CREATE INDEX idx_vcp_alerts_created ON vcp_alerts(created_at);
+CREATE INDEX idx_vcp_alerts_parent ON vcp_alerts(parent_alert_id);
+```
+
+### 8.5 Alert State Machine
+
+```
+                    ┌─────────────┐
+                    │   PENDING   │
+                    └──────┬──────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+   │  NOTIFIED   │  │  CONVERTED  │  │   EXPIRED   │
+   └──────┬──────┘  └─────────────┘  └─────────────┘
+          │
+          ▼
+   ┌─────────────┐
+   │  COMPLETED  │  (Trade alerts only, after trade closes)
+   └─────────────┘
+```
+
+**State Transitions:**
+- PENDING → NOTIFIED: Alert sent to user
+- PENDING → CONVERTED: Next-stage alert created (contraction→pre-alert or pre-alert→trade)
+- PENDING → EXPIRED: Alert TTL exceeded without conversion
+- NOTIFIED → COMPLETED: Trade alert acknowledged and trade closed
+
+### 8.6 Alert Flow Sequence
+
+```
+Day 1: Pattern detected with 2 contractions, score=75
+       │
+       ▼
+   ┌───────────────────────────────────────┐
+   │ AlertManager.check_contraction_alert()│
+   │ → Creates CONTRACTION alert (PENDING) │
+   │ → Notifies subscribers                │
+   └───────────────────────────────────────┘
+
+Day 5: Price moves within 3% of pivot
+       │
+       ▼
+   ┌───────────────────────────────────────┐
+   │ AlertManager.check_pre_alert()        │
+   │ → Creates PRE_ALERT (PENDING)         │
+   │ → Marks CONTRACTION as CONVERTED      │
+   │ → Notifies subscribers                │
+   └───────────────────────────────────────┘
+
+Day 8: Entry signal triggers (pivot breakout)
+       │
+       ▼
+   ┌───────────────────────────────────────┐
+   │ AlertManager.check_trade_alert()      │
+   │ → Creates TRADE alert (PENDING)       │
+   │ → Marks PRE_ALERT as CONVERTED        │
+   │ → Notifies subscribers                │
+   └───────────────────────────────────────┘
+```
+
+### 8.7 File Structure
+
+```
+src/
+└── vcp/
+    ├── __init__.py
+    ├── models.py          # Alert, AlertChain, AlertType, AlertState, etc.
+    ├── detector.py        # VCPDetector class
+    ├── alert_manager.py   # AlertManager class
+    ├── repository.py      # AlertRepository protocol + SQLite implementation
+    ├── notifications.py   # NotificationHub + channel implementations
+    └── alert_system.py    # VCPAlertSystem orchestrator
+
+tests/
+└── vcp/
+    ├── test_models.py
+    ├── test_detector.py
+    ├── test_alert_manager.py
+    ├── test_repository.py
+    └── test_alert_system.py
+```
+
+---
+
 ## 9. Document History
 
 | Version | Date | Author | Changes |
