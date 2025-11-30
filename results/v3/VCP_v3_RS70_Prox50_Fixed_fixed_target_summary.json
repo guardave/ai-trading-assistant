@@ -1,0 +1,15 @@
+{
+  "strategy_name": "VCP_v3_RS70_Prox50_Fixed",
+  "exit_method": "fixed_target",
+  "total_trades": 23,
+  "winning_trades": 7,
+  "losing_trades": 16,
+  "win_rate": 30.434782608695656,
+  "avg_win_pct": 10.67171522852781,
+  "avg_loss_pct": -7.000000000000006,
+  "profit_factor": 0.6669822017829875,
+  "total_return_pct": -37.297993400305444,
+  "proximity_correlation": 0.22410536425019872,
+  "high_proximity_win_rate": 30.434782608695656,
+  "low_proximity_win_rate": null
+}

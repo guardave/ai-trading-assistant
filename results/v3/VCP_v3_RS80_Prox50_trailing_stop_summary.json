@@ -1,0 +1,15 @@
+{
+  "strategy_name": "VCP_v3_RS80_Prox50",
+  "exit_method": "trailing_stop",
+  "total_trades": 13,
+  "winning_trades": 5,
+  "losing_trades": 8,
+  "win_rate": 38.46153846153847,
+  "avg_win_pct": 9.20704367786631,
+  "avg_loss_pct": -7.000000000000006,
+  "profit_factor": 0.8220574712380626,
+  "total_return_pct": -9.964781610668506,
+  "proximity_correlation": 0.37019370469449325,
+  "high_proximity_win_rate": 38.46153846153847,
+  "low_proximity_win_rate": null
+}

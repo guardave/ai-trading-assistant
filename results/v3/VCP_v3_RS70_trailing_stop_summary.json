@@ -1,0 +1,15 @@
+{
+  "strategy_name": "VCP_v3_RS70",
+  "exit_method": "trailing_stop",
+  "total_trades": 23,
+  "winning_trades": 11,
+  "losing_trades": 12,
+  "win_rate": 47.82608695652174,
+  "avg_win_pct": 7.476486936123569,
+  "avg_loss_pct": -7.000000000000006,
+  "profit_factor": 0.9790637654447522,
+  "total_return_pct": -1.7586437026408106,
+  "proximity_correlation": 0.39221834132626604,
+  "high_proximity_win_rate": 47.82608695652174,
+  "low_proximity_win_rate": null
+}
