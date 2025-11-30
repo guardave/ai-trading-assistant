@@ -23,8 +23,8 @@ This project is an AI-powered trading assistant built with reference to https://
 8. **VCP Visualization Tool** - Charts for pattern review
 9. **Backtest V3** - New backtest script using refined VCP detector
 
-**In Progress:**
-- Backtest optimization for profitability
+**Completed:**
+10. **Comprehensive Analysis** - V2 vs V3 comparison, market filter, extended history, trailing stop optimization
 
 ### Key Files
 
@@ -32,16 +32,20 @@ This project is an AI-powered trading assistant built with reference to https://
 backtest/
 ├── strategy_params.py          # Extracted strategy parameters
 ├── backtest_framework.py       # Base backtest engine
-├── backtest_framework_v2.py    # Enhanced with proximity analysis (old detector)
-├── run_backtest_v3.py          # NEW: Uses refined VCP detector
+├── backtest_framework_v2.py    # Enhanced with proximity analysis (V2 detector)
+├── run_backtest_v3.py          # Uses refined VCP detector (V3)
 ├── vcp_detector.py             # Refined VCP pattern detection
+├── comprehensive_analysis.py   # NEW: Full comparison analysis script
 ├── visualize_vcp_review.py     # VCP chart generation
 ├── visualize_trades_enhanced.py # Trade visualization
 └── charts/
     └── vcp_review/             # Generated VCP analysis charts
 
 results/
-└── v3/                         # V3 backtest results
+├── v3/                         # V3 backtest results
+└── comprehensive_analysis/     # NEW: Full analysis with charts
+    ├── summary.csv             # All configurations summary
+    └── charts/                 # Comparison charts
 ```
 
 ### VCP Detection Algorithm (2025-11-29)
@@ -114,13 +118,32 @@ See `docs/backtest-v3-results.md` for full analysis.
 - Remote: https://github.com/guardave/ai-trading-assistant.git
 - User: dawo (dawo.dev@idficient.com)
 
-## Next Steps (2025-12-01)
+### Comprehensive Analysis Results (2025-11-30)
 
-1. **Investigate V2 vs V3 differences** - Compare what patterns each detector finds
-2. **Relax breakout criteria** - Try upper 40% close instead of 50%
-3. **Add market regime filter** - Avoid trading when SPY < 200 MA
-4. **Test longer history** - 2020-2024 instead of 2023+
-5. **Adjust trailing stop parameters** - Try 10% activation instead of 8%
+**Key Findings:**
+1. **V2 detector dramatically outperforms V3**: +672.5% vs +77.9% return
+2. **V2 generates 7.3x more trades**: 619 vs 85 trades
+3. **V2 works in both bull and bear markets**: 52% win rate in both
+4. **V3 struggles in bear markets**: Only 25% win rate
+5. **Market filter helps V3 but hurts V2**: V3 improves to PF 1.36, V2 drops to +547%
+6. **Extended history**: V2 shows +473% (2020-2024), V3 shows -29.9%
+7. **Trailing stop 8%/5% optimal**: Current config beats alternatives
+
+**Recommended Configuration:**
+- Detector: V2 (rolling window method)
+- RS Threshold: 70
+- Exit: Trailing stop (8% activation, 5% trail)
+- Market Filter: Not recommended for V2
+
+See `docs/comprehensive-analysis-report.md` for full analysis.
+
+## Next Steps
+
+1. **Investigate V2 algorithm**: Understand why rolling window method produces more profitable patterns
+2. **Hybrid approach**: Consider using V3 pattern quality scoring with V2 detection
+3. **Position sizing**: Test Kelly criterion or volatility-based sizing
+4. **Walk-forward optimization**: Validate parameters don't overfit
+5. **Live paper trading**: Test V2 configuration in real-time
 
 ## Technical Notes
 
