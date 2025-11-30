@@ -191,6 +191,108 @@ The current 8%/5% configuration is optimal for trailing stops. However, the Fixe
 
 ---
 
+## Sample Trade Charts
+
+This section presents 10 sample trades from the backtest results, illustrating actual VCP patterns detected by both V2 and V3 detectors. The charts show entry points, exit points, stop loss levels, and trade outcomes.
+
+### V2 Detector - Winning Trades
+
+#### 1. GE - V2 Winner (+39.0%)
+**Entry:** 2023-10-24 at $89.62 | **Exit:** 2024-03-05 at $124.59 (trailing stop)
+- RS Rating: 91 | Contractions: 2 | Proximity Score: 100
+- Max Gain: 42.8% | Duration: 133 days
+- Classic VCP breakout from a tight consolidation, followed by sustained uptrend
+
+![GE V2 Winner](../results/comprehensive_analysis/sample_patterns/01_GE_v2_winner_2023-10-24.png)
+
+#### 2. ORCL - V2 Winner (+27.0%)
+**Entry:** 2025-09-08 at $168.79 | **Exit:** 2025-11-14 at $214.40 (trailing stop)
+- RS Rating: 86 | Contractions: 2 | Proximity Score: 80
+- Max Gain: 31.0% | Duration: 48 days
+- Strong relative strength stock breaking out of volatility contraction
+
+![ORCL V2 Winner](../results/comprehensive_analysis/sample_patterns/02_ORCL_v2_winner_2025-09-08.png)
+
+#### 3. GE - V2 Winner (+24.9%)
+**Entry:** 2023-11-30 at $114.96 | **Exit:** 2024-03-05 at $143.56 (trailing stop)
+- RS Rating: 92 | Contractions: 2 | Proximity Score: 60
+- Max Gain: 30.5% | Duration: 66 days
+- Second VCP entry on GE after initial breakout, capturing continuation move
+
+![GE V2 Winner #2](../results/comprehensive_analysis/sample_patterns/03_GE_v2_winner_2023-11-30.png)
+
+### V2 Detector - Losing Trades
+
+#### 4. WFC - V2 Loser (-7.0%)
+**Entry:** 2025-02-28 at $77.03 | **Exit:** 2025-03-04 at $71.64 (stop)
+- RS Rating: 88 | Contractions: 4 | Proximity Score: 80
+- Max Gain: 0.8% | Duration: 4 days
+- False breakout - stock reversed quickly after entry, hitting stop loss
+
+![WFC V2 Loser](../results/comprehensive_analysis/sample_patterns/04_WFC_v2_loser_2025-02-28.png)
+
+#### 5. WFC - V2 Loser (-7.0%)
+**Entry:** 2025-04-09 at $70.01 | **Exit:** 2025-04-17 at $65.11 (stop)
+- RS Rating: 78 | Contractions: 2 | Proximity Score: 50
+- Max Gain: 1.7% | Duration: 6 days
+- Pattern failed during market weakness, demonstrating the 7% stop protecting capital
+
+![WFC V2 Loser #2](../results/comprehensive_analysis/sample_patterns/05_WFC_v2_loser_2025-04-09.png)
+
+### V3 Detector - Winning Trades
+
+#### 6. GE - V3 Winner (+39.0%)
+**Entry:** 2023-10-24 at $89.62 | **Exit:** 2024-03-05 at $124.59 (trailing stop)
+- RS Rating: 91 | Contractions: 2 | Proximity Score: 100
+- Max Gain: 42.8% | Duration: 133 days
+- Same pattern detected by both V2 and V3 - shows overlap in high-quality setups
+
+![GE V3 Winner](../results/comprehensive_analysis/sample_patterns/06_GE_v3_winner_2023-10-24.png)
+
+#### 7. NVDA - V3 Winner (+35.6%)
+**Entry:** 2024-01-08 at $52.23 | **Exit:** 2024-02-13 at $70.84 (trailing stop)
+- RS Rating: 94 | Contractions: 2 | Proximity Score: 90
+- Max Gain: 42.8% | Duration: 36 days
+- AI boom breakout - tight VCP pattern with explosive follow-through
+
+![NVDA V3 Winner](../results/comprehensive_analysis/sample_patterns/07_NVDA_v3_winner_2024-01-08.png)
+
+#### 8. ADBE - V3 Winner (+19.9%)
+**Entry:** 2023-05-26 at $412.03 | **Exit:** 2023-07-19 at $494.13 (trailing stop)
+- RS Rating: 78 | Contractions: 2 | Proximity Score: 75
+- Max Gain: 25.6% | Duration: 38 days
+- Clean VCP breakout with steady climb to trailing stop exit
+
+![ADBE V3 Winner](../results/comprehensive_analysis/sample_patterns/08_ADBE_v3_winner_2023-05-26.png)
+
+### V3 Detector - Losing Trades
+
+#### 9. TXN - V3 Loser (-7.0%)
+**Entry:** 2024-08-21 at $202.31 | **Exit:** 2024-08-28 at $188.15 (stop)
+- RS Rating: 74 | Contractions: 2 | Proximity Score: 100
+- Max Gain: 2.2% | Duration: 5 days
+- High proximity score but failed - demonstrates that pattern quality alone doesn't guarantee success
+
+![TXN V3 Loser](../results/comprehensive_analysis/sample_patterns/09_TXN_v3_loser_2024-08-21.png)
+
+#### 10. INTC - V3 Loser (-7.0%)
+**Entry:** 2023-09-07 at $37.55 | **Exit:** 2023-09-20 at $34.92 (stop)
+- RS Rating: 90 | Contractions: 2 | Proximity Score: 95
+- Max Gain: 5.0% | Duration: 13 days
+- Pattern with good metrics failed in weak semiconductor sector
+
+![INTC V3 Loser](../results/comprehensive_analysis/sample_patterns/10_INTC_v3_loser_2023-09-07.png)
+
+### Key Observations from Sample Charts
+
+1. **Winners show sustained momentum**: Successful trades display continuous upward movement after breakout
+2. **Losers reverse quickly**: Failed patterns typically hit stops within 1-2 weeks
+3. **V2 and V3 overlap on best setups**: The GE trade was detected by both detectors
+4. **High proximity scores can still fail**: TXN (100) and INTC (95) both lost despite strong pattern metrics
+5. **Sector matters**: INTC failed during semiconductor weakness, while NVDA succeeded during AI boom
+
+---
+
 ## Conclusions
 
 ### 1. Detector Selection
@@ -225,13 +327,25 @@ Extended history analysis reveals:
 
 ## Files Generated
 
-### Charts
+### Summary Charts
 - `results/comprehensive_analysis/charts/v2_vs_v3_comparison.png`
 - `results/comprehensive_analysis/charts/market_regime_comparison.png`
 - `results/comprehensive_analysis/charts/bull_bear_breakdown.png`
 - `results/comprehensive_analysis/charts/extended_history_comparison.png`
 - `results/comprehensive_analysis/charts/extended_monthly_V2_2020-2024.png`
 - `results/comprehensive_analysis/charts/trailing_stop_comparison.png`
+
+### Sample Pattern Charts
+- `results/comprehensive_analysis/sample_patterns/01_GE_v2_winner_2023-10-24.png`
+- `results/comprehensive_analysis/sample_patterns/02_ORCL_v2_winner_2025-09-08.png`
+- `results/comprehensive_analysis/sample_patterns/03_GE_v2_winner_2023-11-30.png`
+- `results/comprehensive_analysis/sample_patterns/04_WFC_v2_loser_2025-02-28.png`
+- `results/comprehensive_analysis/sample_patterns/05_WFC_v2_loser_2025-04-09.png`
+- `results/comprehensive_analysis/sample_patterns/06_GE_v3_winner_2023-10-24.png`
+- `results/comprehensive_analysis/sample_patterns/07_NVDA_v3_winner_2024-01-08.png`
+- `results/comprehensive_analysis/sample_patterns/08_ADBE_v3_winner_2023-05-26.png`
+- `results/comprehensive_analysis/sample_patterns/09_TXN_v3_loser_2024-08-21.png`
+- `results/comprehensive_analysis/sample_patterns/10_INTC_v3_loser_2023-09-07.png`
 
 ### Data
 - `results/comprehensive_analysis/summary.csv` - All configurations summary
