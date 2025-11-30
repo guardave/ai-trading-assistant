@@ -1,0 +1,7 @@
+Config,Entry Types,Trades,Win Rate,Profit Factor,Total Return,Avg Win,Avg Loss,Avg Risk,Avg Days
+pivot_only,pivot_breakout,33,66.7%,2.53,112.5%,8.5%,-6.7%,15.4%,27.4
+cheat_only,cheat,16,43.8%,0.85,-6.4%,5.0%,-4.6%,4.9%,10.2
+low_cheat_only,low_cheat,15,66.7%,1.92,34.2%,7.1%,-7.4%,7.6%,17.7
+handle_only,handle,80,70.0%,1.58,141.6%,6.9%,-10.2%,15.4%,26.0
+all_entries,"low_cheat, cheat, handle, pivot_breakout",121,67.8%,1.76,252.7%,7.1%,-8.5%,13.4%,23.7
+cheat_and_low_cheat,"low_cheat, cheat",30,56.7%,1.41,31.1%,6.3%,-5.8%,6.3%,14.0

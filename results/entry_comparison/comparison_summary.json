@@ -1,0 +1,90 @@
+[
+  {
+    "config_name": "pivot_only",
+    "entry_types": [
+      "pivot_breakout"
+    ],
+    "total_trades": 33,
+    "win_rate": 66.66666666666666,
+    "profit_factor": 2.525583806191744,
+    "total_return_pct": 112.50114921544979,
+    "avg_win_pct": 8.465643819384978,
+    "avg_loss_pct": -6.703910437365434,
+    "avg_risk_pct": 15.35330919097742,
+    "avg_days_held": 27.393939393939394
+  },
+  {
+    "config_name": "cheat_only",
+    "entry_types": [
+      "cheat"
+    ],
+    "total_trades": 16,
+    "win_rate": 43.75,
+    "profit_factor": 0.8453888098907455,
+    "total_return_pct": -6.430053095042391,
+    "avg_win_pct": 5.022640460435874,
+    "avg_loss_pct": -4.620948479788169,
+    "avg_risk_pct": 4.880412014219559,
+    "avg_days_held": 10.25
+  },
+  {
+    "config_name": "low_cheat_only",
+    "entry_types": [
+      "low_cheat"
+    ],
+    "total_trades": 15,
+    "win_rate": 66.66666666666666,
+    "profit_factor": 1.9220950763850952,
+    "total_return_pct": 34.221698482439464,
+    "avg_win_pct": 7.133468103582142,
+    "avg_loss_pct": -7.422596510676394,
+    "avg_risk_pct": 7.63060693354534,
+    "avg_days_held": 17.733333333333334
+  },
+  {
+    "config_name": "handle_only",
+    "entry_types": [
+      "handle"
+    ],
+    "total_trades": 80,
+    "win_rate": 70.0,
+    "profit_factor": 1.580059155055032,
+    "total_return_pct": 141.60976592329973,
+    "avg_win_pct": 6.888207778415587,
+    "avg_loss_pct": -10.172077902832216,
+    "avg_risk_pct": 15.386833245085295,
+    "avg_days_held": 26.0375
+  },
+  {
+    "config_name": "all_entries",
+    "entry_types": [
+      "low_cheat",
+      "cheat",
+      "handle",
+      "pivot_breakout"
+    ],
+    "total_trades": 121,
+    "win_rate": 67.76859504132231,
+    "profit_factor": 1.7582402077426393,
+    "total_return_pct": 252.74999303589107,
+    "avg_win_pct": 7.147410024417685,
+    "avg_loss_pct": -8.547118691445101,
+    "avg_risk_pct": 13.388744941540713,
+    "avg_days_held": 23.727272727272727
+  },
+  {
+    "config_name": "cheat_and_low_cheat",
+    "entry_types": [
+      "low_cheat",
+      "cheat"
+    ],
+    "total_trades": 30,
+    "win_rate": 56.666666666666664,
+    "profit_factor": 1.411791114035804,
+    "total_return_pct": 31.061917242133056,
+    "avg_win_pct": 6.2643037799336785,
+    "avg_loss_pct": -5.802403616672267,
+    "avg_risk_pct": 6.309180812531901,
+    "avg_days_held": 13.966666666666667
+  }
+]
