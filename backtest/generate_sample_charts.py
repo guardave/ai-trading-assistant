@@ -6,7 +6,8 @@ Creates 10 sample charts showing detected VCP patterns from actual backtest trad
 - 5 winning trades (best performers)
 - 5 losing trades (stopped out)
 
-Charts illustrate the patterns detected by both V2 and V3 detectors.
+Charts illustrate the patterns detected by both V2 and V3 detectors,
+with VCP contractions marked using trendlines and percentage labels.
 """
 
 import pandas as pd
@@ -17,6 +18,8 @@ from matplotlib.lines import Line2D
 from pathlib import Path
 import yfinance as yf
 from datetime import datetime, timedelta
+from dataclasses import dataclass
+from typing import List, Optional
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,6 +31,19 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Data cache directory
 CACHE_DIR = Path(__file__).parent.parent / 'cache'
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass
+class Contraction:
+    """Represents a single contraction in VCP pattern"""
+    start_idx: int
+    end_idx: int
+    high: float
+    low: float
+    high_date: pd.Timestamp
+    low_date: pd.Timestamp
+    range_pct: float
+    duration_days: int
 
 
 def get_stock_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
@@ -49,6 +65,69 @@ def get_stock_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     return df
 
 
+def detect_contractions_v2(df: pd.DataFrame, lookback_days: int = 120) -> List[Contraction]:
+    """
+    Detect contractions using V2 rolling window method.
+    Returns contractions with high/low points for visualization.
+    """
+    if len(df) < lookback_days:
+        return []
+
+    df_slice = df.tail(lookback_days).copy()
+
+    contractions = []
+
+    # Calculate rolling ranges
+    window = 20
+    df_slice['High_20'] = df_slice['High'].rolling(window=window).max()
+    df_slice['Low_20'] = df_slice['Low'].rolling(window=window).min()
+    df_slice['Range_20'] = (df_slice['High_20'] - df_slice['Low_20']) / df_slice['Low_20'] * 100
+    df_slice['Range_20'] = df_slice['Range_20'].fillna(method='bfill')
+
+    range_series = df_slice['Range_20'].values
+
+    i = 0
+    while i < len(range_series) - 20:
+        window_range = range_series[i:i+20]
+
+        if len(window_range) < 20:
+            break
+
+        max_range = np.max(window_range[:10])
+        min_range = np.min(window_range[10:])
+
+        if max_range > 0 and (max_range - min_range) / max_range > 0.3:
+            start_idx = i
+            end_idx = i + 20
+
+            # Find actual high and low within this contraction
+            high_val = df_slice['High'].iloc[start_idx:end_idx].max()
+            low_val = df_slice['Low'].iloc[start_idx:end_idx].min()
+
+            # Find dates of high and low
+            high_idx = df_slice['High'].iloc[start_idx:end_idx].idxmax()
+            low_idx = df_slice['Low'].iloc[start_idx:end_idx].idxmin()
+
+            range_pct = (high_val - low_val) / low_val * 100
+
+            contractions.append(Contraction(
+                start_idx=start_idx,
+                end_idx=end_idx,
+                high=high_val,
+                low=low_val,
+                high_date=high_idx,
+                low_date=low_idx,
+                range_pct=range_pct,
+                duration_days=20
+            ))
+
+            i = end_idx
+        else:
+            i += 5
+
+    return contractions
+
+
 def create_trade_chart(
     symbol: str,
     df: pd.DataFrame,
@@ -68,11 +147,11 @@ def create_trade_chart(
 ) -> None:
     """
     Create a trade chart showing:
-    - 60 days before entry
+    - 60 days before entry with VCP pattern marked
     - Entry point marked
     - Exit point marked
     - Stop loss line
-    - Trade outcome (profit/loss)
+    - Contractions shown as trendlines with percentages
     """
     # Find entry and exit dates in data
     entry_dt = pd.to_datetime(entry_date)
@@ -92,6 +171,11 @@ def create_trade_chart(
     if len(df_plot) < 10:
         logging.warning(f"Not enough data for {symbol}")
         return
+
+    # Detect contractions in the pre-entry period
+    entry_plot_idx = df_plot.index.get_indexer([entry_dt], method='nearest')[0]
+    df_pre_entry = df_plot.iloc[:entry_plot_idx+1]
+    contractions = detect_contractions_v2(df_pre_entry, lookback_days=min(60, len(df_pre_entry)))
 
     # Create figure
     fig, axes = plt.subplots(2, 1, figsize=(14, 10),
@@ -119,9 +203,58 @@ def create_trade_chart(
         )
         ax_price.add_patch(rect)
 
-    # Find positions for entry and exit
+    # Create date to position mapping
     date_to_pos = {date: i for i, date in enumerate(df_plot.index)}
 
+    # Draw contractions as trendlines
+    contraction_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD']
+
+    y_min = df_plot['Low'].min() * 0.97
+    y_max = df_plot['High'].max() * 1.03
+
+    # Take last 2-4 contractions for display
+    display_contractions = contractions[-4:] if len(contractions) >= 4 else contractions[-2:] if len(contractions) >= 2 else contractions
+
+    for c_idx, contraction in enumerate(display_contractions):
+        color = contraction_colors[c_idx % len(contraction_colors)]
+
+        # Find positions for high and low dates
+        if contraction.high_date in date_to_pos and contraction.low_date in date_to_pos:
+            high_pos = date_to_pos[contraction.high_date]
+            low_pos = date_to_pos[contraction.low_date]
+
+            # Draw trendline from high to low
+            ax_price.plot([high_pos, low_pos], [contraction.high, contraction.low],
+                         color=color, linewidth=2.5, linestyle='-',
+                         marker='o', markersize=8, zorder=8)
+
+            # Add contraction percentage label
+            mid_pos = (high_pos + low_pos) / 2
+            mid_price = (contraction.high + contraction.low) / 2
+
+            label_offset = (y_max - y_min) * 0.03
+            ax_price.annotate(
+                f'C{c_idx+1}\n{contraction.range_pct:.1f}%',
+                xy=(mid_pos, mid_price),
+                xytext=(mid_pos + 2, mid_price + label_offset),
+                fontsize=9,
+                fontweight='bold',
+                color=color,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                         edgecolor=color, alpha=0.9),
+                arrowprops=dict(arrowstyle='->', color=color, lw=1),
+                zorder=15
+            )
+
+            # Mark high with down triangle
+            ax_price.scatter(high_pos, contraction.high, marker='v', color=color,
+                           s=100, zorder=9, edgecolor='black', linewidth=1)
+
+            # Mark low with up triangle
+            ax_price.scatter(low_pos, contraction.low, marker='^', color=color,
+                           s=100, zorder=9, edgecolor='black', linewidth=1)
+
+    # Find positions for entry and exit
     entry_pos = None
     exit_pos = None
 
@@ -138,7 +271,7 @@ def create_trade_chart(
     # Draw entry marker
     if entry_pos is not None:
         ax_price.scatter(entry_pos, entry_price, marker='^', color='blue',
-                        s=200, zorder=10, edgecolor='black', linewidth=2,
+                        s=250, zorder=12, edgecolor='black', linewidth=2,
                         label=f'Entry: ${entry_price:.2f}')
         ax_price.axvline(x=entry_pos, color='blue', linestyle='--', alpha=0.5, linewidth=1)
 
@@ -147,7 +280,8 @@ def create_trade_chart(
         exit_color = 'green' if pnl_pct > 0 else 'red'
         marker = 'v' if pnl_pct > 0 else 'x'
         ax_price.scatter(exit_pos, exit_price, marker=marker, color=exit_color,
-                        s=200, zorder=10, edgecolor='black', linewidth=2,
+                        s=250, zorder=12, edgecolor='black' if marker == 'v' else exit_color,
+                        linewidth=2,
                         label=f'Exit: ${exit_price:.2f} ({exit_reason})')
         ax_price.axvline(x=exit_pos, color=exit_color, linestyle='--', alpha=0.5, linewidth=1)
 
@@ -158,7 +292,7 @@ def create_trade_chart(
     # Shade the trade period
     if entry_pos is not None and exit_pos is not None:
         shade_color = 'lightgreen' if pnl_pct > 0 else 'lightcoral'
-        ax_price.axvspan(entry_pos, exit_pos, alpha=0.2, color=shade_color)
+        ax_price.axvspan(entry_pos, exit_pos, alpha=0.15, color=shade_color)
 
     # Set axis properties
     x_ticks = list(range(0, len(df_plot), max(1, len(df_plot) // 8)))
@@ -167,11 +301,7 @@ def create_trade_chart(
     ax_price.set_xticklabels(x_labels, rotation=45, ha='right')
     ax_price.set_xlim(-1, len(df_plot))
     ax_price.set_ylabel('Price ($)', fontsize=11)
-
-    y_min = df_plot['Low'].min() * 0.97
-    y_max = df_plot['High'].max() * 1.03
     ax_price.set_ylim(y_min, y_max)
-
     ax_price.legend(loc='upper left', fontsize=10)
     ax_price.grid(True, alpha=0.3)
 
@@ -209,11 +339,23 @@ def create_trade_chart(
                  fontsize=9, verticalalignment='top', horizontalalignment='right',
                  bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
+    # Add contraction legend
+    if display_contractions:
+        contraction_legend = []
+        for c_idx, c in enumerate(display_contractions):
+            color = contraction_colors[c_idx % len(contraction_colors)]
+            contraction_legend.append(
+                Line2D([0], [0], color=color, linewidth=2.5, marker='o', markersize=6,
+                       label=f'C{c_idx+1}: {c.range_pct:.1f}% ({c.duration_days}d)')
+            )
+        ax_price.legend(handles=ax_price.get_legend_handles_labels()[0] + contraction_legend,
+                       loc='upper left', fontsize=9)
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
 
-    logging.info(f"Saved: {save_path.name}")
+    logging.info(f"Saved: {save_path.name} ({len(display_contractions)} contractions shown)")
 
 
 def generate_sample_charts():
