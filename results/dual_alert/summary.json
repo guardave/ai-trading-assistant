@@ -1,14 +1,16 @@
 {
-  "total_pre_alerts": 253,
-  "pre_alerts_converted": 28,
-  "conversion_rate": 11.067193675889328,
-  "false_pre_alerts": 225,
+  "total_pre_alert_sequences": 143,
+  "total_pre_alerts": 570,
+  "avg_alerts_per_sequence": 3.986013986013986,
+  "sequences_converted": 31,
+  "conversion_rate": 21.678321678321677,
+  "false_sequences": 112,
   "total_trades": 108,
-  "trades_with_pre_alert": 28,
-  "trades_without_pre_alert": 80,
-  "win_rate_with_pre_alert": 75.0,
-  "win_rate_without_pre_alert": 67.5,
-  "avg_days_pre_alert_to_trade": 2.0714285714285716,
-  "profit_factor": 1.834170210050376,
-  "total_return_pct": 250.559448027288
+  "trades_with_pre_alert": 31,
+  "trades_without_pre_alert": 77,
+  "win_rate_with_pre_alert": 74.19354838709677,
+  "win_rate_without_pre_alert": 67.53246753246754,
+  "avg_days_first_alert_to_trade": 5.741935483870968,
+  "profit_factor": 1.8341702100503756,
+  "total_return_pct": 250.55944802728806
 }

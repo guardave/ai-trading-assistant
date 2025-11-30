@@ -49,16 +49,37 @@ class PreAlert:
     base_low: float
     position_in_base: str  # Where current price is in the base
     volume_vs_avg: float  # Current volume vs 50-day avg
+    alert_sequence: int = 1  # Which pre-alert in the sequence (1st, 2nd, 3rd...)
     converted_to_trade: bool = False
     trade_date: Optional[str] = None
     trade_entry_type: Optional[str] = None
 
 
 @dataclass
+class PreAlertSequence:
+    """Tracks a sequence of pre-alerts for the same pattern"""
+    symbol: str
+    first_alert_date: str
+    alerts: List[PreAlert] = field(default_factory=list)
+    converted_to_trade: bool = False
+    trade_date: Optional[str] = None
+
+    @property
+    def num_alerts(self) -> int:
+        return len(self.alerts)
+
+    @property
+    def last_alert(self) -> Optional[PreAlert]:
+        return self.alerts[-1] if self.alerts else None
+
+
+@dataclass
 class Trade:
     """Represents a completed trade"""
     symbol: str
-    pre_alert_date: Optional[str]  # Day -1 (if pre-alert was sent)
+    first_pre_alert_date: Optional[str]  # First pre-alert in sequence
+    last_pre_alert_date: Optional[str]   # Most recent pre-alert before trade
+    num_pre_alerts: int  # How many pre-alerts were sent
     signal_date: str  # Day 0 (trade alert sent)
     entry_date: str
     entry_type: str
@@ -73,25 +94,27 @@ class Trade:
     risk_pct: Optional[float] = None
     overall_score: Optional[float] = None
     had_pre_alert: bool = False
-    pre_alert_days_before: Optional[int] = None
+    days_from_first_pre_alert: Optional[int] = None
 
 
 @dataclass
 class BacktestResult:
     """Results from dual-alert backtest"""
-    total_pre_alerts: int
-    pre_alerts_converted: int
-    conversion_rate: float
-    false_pre_alerts: int  # Pre-alerts that never triggered
+    total_pre_alert_sequences: int  # Number of unique pattern watch sequences
+    total_pre_alerts: int  # Total individual pre-alerts sent
+    sequences_converted: int  # Sequences that led to trades
+    conversion_rate: float  # sequences_converted / total_sequences
+    false_sequences: int  # Sequences that never converted
+    avg_alerts_per_sequence: float  # How many alerts before conversion/expiry
     total_trades: int
     trades_with_pre_alert: int
-    trades_without_pre_alert: int  # Trades that triggered without prior pre-alert
+    trades_without_pre_alert: int
     win_rate_with_pre_alert: float
     win_rate_without_pre_alert: float
-    avg_days_pre_alert_to_trade: float
+    avg_days_first_alert_to_trade: float
     profit_factor: float
     total_return_pct: float
-    pre_alerts: List[PreAlert] = field(default_factory=list)
+    pre_alert_sequences: List[PreAlertSequence] = field(default_factory=list)
     trades: List[Trade] = field(default_factory=list)
 
 
@@ -308,25 +331,26 @@ class DualAlertBacktest:
         start_date: str,
         end_date: str,
         spy_df: pd.DataFrame = None
-    ) -> Tuple[List[PreAlert], List[Trade]]:
+    ) -> Tuple[List[PreAlertSequence], List[Trade]]:
         """Run backtest on a single symbol."""
-        pre_alerts = []
+        sequences = []  # Completed pre-alert sequences
         trades = []
 
         try:
             df = self.cache.get_data(symbol, period='5y')
             if df is None or len(df) < 300:
-                return pre_alerts, trades
+                return sequences, trades
 
             df = df[start_date:end_date]
             if len(df) < 150:
-                return pre_alerts, trades
+                return sequences, trades
 
-            df.name = symbol  # For pre-alert symbol tracking
+            df.name = symbol
 
             lookback = 120
             last_trade_exit_idx = -1
-            active_pre_alerts: Dict[str, Tuple[PreAlert, int]] = {}  # symbol -> (pre_alert, bar_idx)
+            # Track active sequence: (sequence, first_bar_idx, last_bar_idx)
+            active_sequence: Optional[Tuple[PreAlertSequence, int, int]] = None
 
             for i in range(lookback + 50, len(df) - 5):
                 if i <= last_trade_exit_idx:
@@ -362,26 +386,37 @@ class DualAlertBacktest:
 
                     pnl_pct = (exit_price - entry_price) / entry_price * 100 if exit_price else 0
 
-                    # Check if we had a pre-alert for this
+                    # Check if we had a pre-alert sequence for this
                     had_pre_alert = False
-                    pre_alert_date = None
-                    pre_alert_days_before = None
+                    first_pre_alert_date = None
+                    last_pre_alert_date = None
+                    num_pre_alerts = 0
+                    days_from_first = None
 
-                    if symbol in active_pre_alerts:
-                        pa, pa_idx = active_pre_alerts[symbol]
-                        days_since_pre_alert = i - pa_idx
-                        if days_since_pre_alert <= self.max_pre_alert_days:
+                    if active_sequence is not None:
+                        seq, first_idx, last_idx = active_sequence
+                        days_since_last = i - last_idx
+                        if days_since_last <= self.max_pre_alert_days:
                             had_pre_alert = True
-                            pre_alert_date = pa.alert_date
-                            pre_alert_days_before = days_since_pre_alert
-                            pa.converted_to_trade = True
-                            pa.trade_date = current_date
-                            pa.trade_entry_type = entry_signal.entry_type.value
-                        del active_pre_alerts[symbol]
+                            first_pre_alert_date = seq.first_alert_date
+                            last_pre_alert_date = seq.last_alert.alert_date if seq.last_alert else None
+                            num_pre_alerts = seq.num_alerts
+                            days_from_first = i - first_idx
+                            seq.converted_to_trade = True
+                            seq.trade_date = current_date
+                            # Mark all alerts in sequence as converted
+                            for pa in seq.alerts:
+                                pa.converted_to_trade = True
+                                pa.trade_date = current_date
+                                pa.trade_entry_type = entry_signal.entry_type.value
+                        sequences.append(seq)
+                        active_sequence = None
 
                     trade = Trade(
                         symbol=symbol,
-                        pre_alert_date=pre_alert_date,
+                        first_pre_alert_date=first_pre_alert_date,
+                        last_pre_alert_date=last_pre_alert_date,
+                        num_pre_alerts=num_pre_alerts,
                         signal_date=current_date,
                         entry_date=current_date,
                         entry_type=entry_signal.entry_type.value,
@@ -396,7 +431,7 @@ class DualAlertBacktest:
                         risk_pct=risk_pct,
                         overall_score=pattern.overall_score,
                         had_pre_alert=had_pre_alert,
-                        pre_alert_days_before=pre_alert_days_before
+                        days_from_first_pre_alert=days_from_first
                     )
 
                     trades.append(trade)
@@ -413,29 +448,38 @@ class DualAlertBacktest:
                     if pre_alert:
                         pre_alert.symbol = symbol
 
-                        # Only add if we don't already have a recent pre-alert
-                        if symbol not in active_pre_alerts:
-                            pre_alerts.append(pre_alert)
-                            active_pre_alerts[symbol] = (pre_alert, i)
+                        if active_sequence is None:
+                            # Start new sequence
+                            pre_alert.alert_sequence = 1
+                            seq = PreAlertSequence(
+                                symbol=symbol,
+                                first_alert_date=current_date,
+                                alerts=[pre_alert]
+                            )
+                            active_sequence = (seq, i, i)
                         else:
-                            # Update existing pre-alert if this one is better
-                            old_pa, old_idx = active_pre_alerts[symbol]
-                            if i - old_idx > 3:  # More than 3 days old, replace
-                                pre_alerts.append(pre_alert)
-                                active_pre_alerts[symbol] = (pre_alert, i)
+                            # Add to existing sequence (consecutive pre-alert)
+                            seq, first_idx, last_idx = active_sequence
+                            pre_alert.alert_sequence = seq.num_alerts + 1
+                            seq.alerts.append(pre_alert)
+                            active_sequence = (seq, first_idx, i)
 
-                # Clean up old pre-alerts
-                expired = []
-                for sym, (pa, pa_idx) in active_pre_alerts.items():
-                    if i - pa_idx > self.max_pre_alert_days:
-                        expired.append(sym)
-                for sym in expired:
-                    del active_pre_alerts[sym]
+                # Check if active sequence has expired (no pre-alert for too long)
+                if active_sequence is not None:
+                    seq, first_idx, last_idx = active_sequence
+                    if i - last_idx > self.max_pre_alert_days:
+                        # Sequence expired without converting
+                        sequences.append(seq)
+                        active_sequence = None
 
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}")
 
-        return pre_alerts, trades
+        # Don't forget any remaining active sequence
+        if active_sequence is not None:
+            sequences.append(active_sequence[0])
+
+        return sequences, trades
 
     def run_backtest(
         self,
@@ -448,7 +492,7 @@ class DualAlertBacktest:
         logger.info(f"Starting dual-alert backtest: {len(symbols)} symbols")
 
         spy_df = self.cache.get_data('SPY', period='5y')
-        all_pre_alerts = []
+        all_sequences = []
         all_trades = []
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -460,18 +504,23 @@ class DualAlertBacktest:
             for future in as_completed(futures):
                 symbol = futures[future]
                 try:
-                    pre_alerts, trades = future.result()
-                    all_pre_alerts.extend(pre_alerts)
+                    sequences, trades = future.result()
+                    all_sequences.extend(sequences)
                     all_trades.extend(trades)
                 except Exception as e:
                     logger.error(f"Error processing {symbol}: {e}")
 
-        # Calculate statistics
-        total_pre_alerts = len(all_pre_alerts)
-        pre_alerts_converted = len([pa for pa in all_pre_alerts if pa.converted_to_trade])
-        false_pre_alerts = total_pre_alerts - pre_alerts_converted
-        conversion_rate = pre_alerts_converted / total_pre_alerts * 100 if total_pre_alerts > 0 else 0
+        # Calculate sequence statistics
+        total_sequences = len(all_sequences)
+        sequences_converted = len([s for s in all_sequences if s.converted_to_trade])
+        false_sequences = total_sequences - sequences_converted
+        conversion_rate = sequences_converted / total_sequences * 100 if total_sequences > 0 else 0
 
+        # Total individual pre-alerts
+        total_pre_alerts = sum(s.num_alerts for s in all_sequences)
+        avg_alerts_per_seq = total_pre_alerts / total_sequences if total_sequences > 0 else 0
+
+        # Trade statistics
         total_trades = len(all_trades)
         trades_with_pre_alert = len([t for t in all_trades if t.had_pre_alert])
         trades_without_pre_alert = total_trades - trades_with_pre_alert
@@ -483,9 +532,9 @@ class DualAlertBacktest:
         win_rate_with = len([t for t in with_pa if t.pnl_pct and t.pnl_pct > 0]) / len(with_pa) * 100 if with_pa else 0
         win_rate_without = len([t for t in without_pa if t.pnl_pct and t.pnl_pct > 0]) / len(without_pa) * 100 if without_pa else 0
 
-        # Average days from pre-alert to trade
-        days_list = [t.pre_alert_days_before for t in all_trades if t.pre_alert_days_before]
-        avg_days_pre_to_trade = np.mean(days_list) if days_list else 0
+        # Average days from FIRST pre-alert to trade
+        days_list = [t.days_from_first_pre_alert for t in all_trades if t.days_from_first_pre_alert]
+        avg_days_first_to_trade = np.mean(days_list) if days_list else 0
 
         # Overall P&L
         winning = [t for t in all_trades if t.pnl_pct and t.pnl_pct > 0]
@@ -496,19 +545,21 @@ class DualAlertBacktest:
         total_return = sum(t.pnl_pct for t in all_trades if t.pnl_pct)
 
         return BacktestResult(
+            total_pre_alert_sequences=total_sequences,
             total_pre_alerts=total_pre_alerts,
-            pre_alerts_converted=pre_alerts_converted,
+            sequences_converted=sequences_converted,
             conversion_rate=conversion_rate,
-            false_pre_alerts=false_pre_alerts,
+            false_sequences=false_sequences,
+            avg_alerts_per_sequence=avg_alerts_per_seq,
             total_trades=total_trades,
             trades_with_pre_alert=trades_with_pre_alert,
             trades_without_pre_alert=trades_without_pre_alert,
             win_rate_with_pre_alert=win_rate_with,
             win_rate_without_pre_alert=win_rate_without,
-            avg_days_pre_alert_to_trade=avg_days_pre_to_trade,
+            avg_days_first_alert_to_trade=avg_days_first_to_trade,
             profit_factor=profit_factor,
             total_return_pct=total_return,
-            pre_alerts=all_pre_alerts,
+            pre_alert_sequences=all_sequences,
             trades=all_trades
         )
 
@@ -549,10 +600,12 @@ def generate_sample_charts(result: BacktestResult, output_dir: str):
 
 def generate_trade_chart(trade: Trade, cache: DataCache, detector: VCPDetectorV5,
                          output_dir: str, chart_num: int):
-    """Generate a single trade chart showing pre-alert and trade alert."""
+    """Generate a single trade chart showing pre-alert sequence and trade alert."""
     symbol = trade.symbol
     signal_date = trade.signal_date
-    pre_alert_date = trade.pre_alert_date
+    first_pre_alert_date = trade.first_pre_alert_date
+    last_pre_alert_date = trade.last_pre_alert_date
+    num_pre_alerts = trade.num_pre_alerts
     exit_date = trade.exit_date
     pnl_pct = trade.pnl_pct
 
@@ -565,7 +618,7 @@ def generate_trade_chart(trade: Trade, cache: DataCache, detector: VCPDetectorV5
 
     signal_dt = pd.Timestamp(signal_date)
     exit_dt = pd.Timestamp(exit_date) if exit_date else signal_dt
-    pre_alert_dt = pd.Timestamp(pre_alert_date) if pre_alert_date else None
+    first_pre_alert_dt = pd.Timestamp(first_pre_alert_date) if first_pre_alert_date else None
 
     display_start = signal_dt - timedelta(days=220)
     display_end = exit_dt + timedelta(days=5)
@@ -588,7 +641,10 @@ def generate_trade_chart(trade: Trade, cache: DataCache, detector: VCPDetectorV5
     outcome_color = '#4CAF50' if is_winner else '#f44336'
 
     entry_type = trade.entry_type.upper().replace('_', ' ')
-    pre_alert_str = f"Pre-Alert: {pre_alert_date}" if pre_alert_date else "No Pre-Alert"
+    if num_pre_alerts > 0:
+        pre_alert_str = f"Pre-Alerts: {num_pre_alerts} ({first_pre_alert_date} → {last_pre_alert_date})"
+    else:
+        pre_alert_str = "No Pre-Alert"
 
     fig.suptitle(
         f'{symbol} - {entry_type} Entry - {outcome_str}\n'
@@ -649,26 +705,37 @@ def generate_trade_chart(trade: Trade, cache: DataCache, detector: VCPDetectorV5
     exit_price = trade.exit_price
     stop_loss = trade.stop_loss
 
-    pre_alert_pos = None
+    first_pre_alert_pos = None
+    last_pre_alert_pos = None
     signal_pos = None
     exit_pos = None
 
     for date in dates:
         date_str = date.strftime('%Y-%m-%d')
-        if pre_alert_date and date_str == pre_alert_date:
-            pre_alert_pos = date_to_pos[date]
+        if first_pre_alert_date and date_str == first_pre_alert_date:
+            first_pre_alert_pos = date_to_pos[date]
+        if last_pre_alert_date and date_str == last_pre_alert_date:
+            last_pre_alert_pos = date_to_pos[date]
         if date_str == signal_date:
             signal_pos = date_to_pos[date]
         if exit_date and date_str == exit_date:
             exit_pos = date_to_pos[date]
 
-    # Pre-alert marker (yellow star)
-    if pre_alert_pos is not None:
-        pre_alert_price = df_display.iloc[pre_alert_pos]['Close']
-        ax_price.scatter([pre_alert_pos], [pre_alert_price], marker='*', s=300,
+    # Pre-alert markers (yellow stars) - show first and last if sequence
+    if first_pre_alert_pos is not None:
+        first_pre_alert_price = df_display.iloc[first_pre_alert_pos]['Close']
+        ax_price.scatter([first_pre_alert_pos], [first_pre_alert_price], marker='*', s=300,
                         color='#FFC107', edgecolor='black', linewidth=1.5, zorder=16,
-                        label=f'Pre-Alert {pre_alert_date}')
-        ax_price.axvline(x=pre_alert_pos, color='#FFC107', linestyle='--', alpha=0.5, linewidth=1)
+                        label=f'1st Pre-Alert {first_pre_alert_date}')
+        ax_price.axvline(x=first_pre_alert_pos, color='#FFC107', linestyle='--', alpha=0.5, linewidth=1)
+
+        # If there are multiple pre-alerts, shade the pre-alert period
+        if last_pre_alert_pos is not None and last_pre_alert_pos != first_pre_alert_pos:
+            last_pre_alert_price = df_display.iloc[last_pre_alert_pos]['Close']
+            ax_price.scatter([last_pre_alert_pos], [last_pre_alert_price], marker='*', s=200,
+                            color='#FF9800', edgecolor='black', linewidth=1.5, zorder=16,
+                            label=f'Last Pre-Alert ({num_pre_alerts} total)')
+            ax_price.axvspan(first_pre_alert_pos, last_pre_alert_pos, alpha=0.1, color='#FFC107')
 
     # Trade entry marker (blue triangle)
     if signal_pos is not None:
@@ -715,9 +782,14 @@ def generate_trade_chart(trade: Trade, cache: DataCache, detector: VCPDetectorV5
 
     # Info box
     info_lines = []
-    if pre_alert_date:
-        info_lines.append(f"Pre-Alert: {pre_alert_date}")
-        info_lines.append(f"Days to Trade: {trade.pre_alert_days_before}")
+    if first_pre_alert_date:
+        if num_pre_alerts > 1:
+            info_lines.append(f"Pre-Alerts: {num_pre_alerts}")
+            info_lines.append(f"First: {first_pre_alert_date}")
+            info_lines.append(f"Last: {last_pre_alert_date}")
+        else:
+            info_lines.append(f"Pre-Alert: {first_pre_alert_date}")
+        info_lines.append(f"Days to Trade: {trade.days_from_first_pre_alert}")
     info_lines.append(f"Trade: {signal_date}")
     info_lines.append(f"Exit: {exit_date}")
     info_lines.append(f"Days Held: {trade.days_held}")
@@ -777,13 +849,15 @@ def main():
     result = engine.run_backtest(symbols, start_date, end_date)
 
     print(f"\n{'='*70}")
-    print("PRE-ALERT STATISTICS")
+    print("PRE-ALERT SEQUENCE STATISTICS")
     print('='*70)
-    print(f"Total Pre-Alerts Generated:    {result.total_pre_alerts}")
-    print(f"Pre-Alerts Converted to Trade: {result.pre_alerts_converted}")
+    print(f"Total Pre-Alert Sequences:     {result.total_pre_alert_sequences}")
+    print(f"Total Individual Alerts:       {result.total_pre_alerts}")
+    print(f"Avg Alerts per Sequence:       {result.avg_alerts_per_sequence:.1f}")
+    print(f"Sequences Converted to Trade:  {result.sequences_converted}")
     print(f"Conversion Rate:               {result.conversion_rate:.1f}%")
-    print(f"False Pre-Alerts (no trade):   {result.false_pre_alerts}")
-    print(f"Avg Days Pre-Alert → Trade:    {result.avg_days_pre_alert_to_trade:.1f}")
+    print(f"False Sequences (no trade):    {result.false_sequences}")
+    print(f"Avg Days 1st Alert → Trade:    {result.avg_days_first_alert_to_trade:.1f}")
 
     print(f"\n{'='*70}")
     print("TRADE STATISTICS")
@@ -795,6 +869,19 @@ def main():
     print(f"Win Rate (without pre-alert):  {result.win_rate_without_pre_alert:.1f}%")
     print(f"Overall Profit Factor:         {result.profit_factor:.2f}")
     print(f"Total Return:                  {result.total_return_pct:.1f}%")
+
+    # Pre-alert count analysis
+    if result.trades_with_pre_alert > 0:
+        trades_with_pa = [t for t in result.trades if t.had_pre_alert]
+        alert_counts = [t.num_pre_alerts for t in trades_with_pa]
+        print(f"\n{'='*70}")
+        print("PRE-ALERT COUNT DISTRIBUTION (for trades with pre-alerts)")
+        print('='*70)
+        for count in sorted(set(alert_counts)):
+            trades_at_count = [t for t in trades_with_pa if t.num_pre_alerts == count]
+            wins = len([t for t in trades_at_count if t.pnl_pct and t.pnl_pct > 0])
+            wr = wins / len(trades_at_count) * 100 if trades_at_count else 0
+            print(f"  {count} pre-alert(s): {len(trades_at_count)} trades, {wr:.1f}% win rate")
 
     # Analysis
     print(f"\n{'='*70}")
@@ -810,19 +897,41 @@ def main():
 
     if result.conversion_rate > 50:
         print(f"✓ Good conversion rate ({result.conversion_rate:.1f}%)")
-        print("  Most pre-alerts lead to actual trades.")
+        print("  Most pre-alert sequences lead to actual trades.")
     else:
         print(f"⚠ Low conversion rate ({result.conversion_rate:.1f}%)")
-        print("  Many pre-alerts don't convert - consider tightening criteria.")
+        print("  Many sequences don't convert - consider tightening criteria.")
+
+    if result.avg_alerts_per_sequence > 1.5:
+        print(f"○ Multiple alerts per sequence ({result.avg_alerts_per_sequence:.1f} avg)")
+        print("  Stocks often hover near pivot for several days before entry.")
 
     # Save results
     output_base = '../results/dual_alert'
     os.makedirs(output_base, exist_ok=True)
 
-    # Save pre-alerts
-    if result.pre_alerts:
-        pa_df = pd.DataFrame([asdict(pa) for pa in result.pre_alerts])
+    # Save pre-alert sequences
+    if result.pre_alert_sequences:
+        # Flatten sequences to individual alerts for CSV
+        all_alerts = []
+        for seq in result.pre_alert_sequences:
+            for alert in seq.alerts:
+                all_alerts.append(asdict(alert))
+        pa_df = pd.DataFrame(all_alerts)
         pa_df.to_csv(f'{output_base}/pre_alerts.csv', index=False)
+
+        # Also save sequence summary
+        seq_data = []
+        for seq in result.pre_alert_sequences:
+            seq_data.append({
+                'symbol': seq.symbol,
+                'first_alert_date': seq.first_alert_date,
+                'num_alerts': seq.num_alerts,
+                'converted_to_trade': seq.converted_to_trade,
+                'trade_date': seq.trade_date
+            })
+        seq_df = pd.DataFrame(seq_data)
+        seq_df.to_csv(f'{output_base}/pre_alert_sequences.csv', index=False)
 
     # Save trades
     if result.trades:
@@ -831,16 +940,18 @@ def main():
 
     # Save summary
     summary = {
+        'total_pre_alert_sequences': result.total_pre_alert_sequences,
         'total_pre_alerts': result.total_pre_alerts,
-        'pre_alerts_converted': result.pre_alerts_converted,
+        'avg_alerts_per_sequence': result.avg_alerts_per_sequence,
+        'sequences_converted': result.sequences_converted,
         'conversion_rate': result.conversion_rate,
-        'false_pre_alerts': result.false_pre_alerts,
+        'false_sequences': result.false_sequences,
         'total_trades': result.total_trades,
         'trades_with_pre_alert': result.trades_with_pre_alert,
         'trades_without_pre_alert': result.trades_without_pre_alert,
         'win_rate_with_pre_alert': result.win_rate_with_pre_alert,
         'win_rate_without_pre_alert': result.win_rate_without_pre_alert,
-        'avg_days_pre_alert_to_trade': result.avg_days_pre_alert_to_trade,
+        'avg_days_first_alert_to_trade': result.avg_days_first_alert_to_trade,
         'profit_factor': result.profit_factor,
         'total_return_pct': result.total_return_pct
     }
