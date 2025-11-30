@@ -68,6 +68,7 @@ class BacktestConfig:
     trailing_activation_pct: float = 8.0
     trailing_stop_pct: float = 5.0
     min_overall_score: float = 70.0
+    take_all_entries: bool = False  # If True, take all valid entries independently (no priority)
 
 
 @dataclass
@@ -215,6 +216,17 @@ class EntryComparisonBacktest:
         allowed.sort(key=lambda x: priority.get(x.entry_type, 5))
         return allowed[0]
 
+    def get_all_entries(self, pattern: VCPPatternV5) -> List[EntrySignal]:
+        """Get all valid entry signals (no priority filtering)."""
+        if not pattern.entry_signals:
+            return []
+
+        # Filter to allowed entry types
+        allowed = [s for s in pattern.entry_signals
+                   if s.entry_type in self.config.allowed_entry_types]
+
+        return allowed
+
     def backtest_symbol(
         self,
         symbol: str,
@@ -251,50 +263,59 @@ class EntryComparisonBacktest:
                 if pattern.overall_score < self.config.min_overall_score:
                     continue
 
-                # Get best entry signal
-                entry_signal = self.get_best_entry(pattern)
+                # Get entry signals based on config
+                if self.config.take_all_entries:
+                    entry_signals = self.get_all_entries(pattern)
+                else:
+                    best_entry = self.get_best_entry(pattern)
+                    entry_signals = [best_entry] if best_entry else []
 
-                if entry_signal is None:
+                if not entry_signals:
                     continue
 
                 entry_row = df.iloc[i]
-                entry_price = entry_signal.entry_price
                 entry_date = entry_row.name.strftime('%Y-%m-%d')
-                stop_loss = entry_signal.stop_loss
 
-                risk = entry_price - stop_loss
-                target_price = entry_price + (risk * self.config.target_rr)
+                # Process each entry signal
+                for entry_signal in entry_signals:
+                    entry_price = entry_signal.entry_price
+                    stop_loss = entry_signal.stop_loss
 
-                exit_date, exit_price, exit_reason, days_held, max_gain, max_dd = self.simulate_trade(
-                    df, i, entry_price, stop_loss, target_price
-                )
+                    risk = entry_price - stop_loss
+                    target_price = entry_price + (risk * self.config.target_rr)
 
-                pnl_pct = (exit_price - entry_price) / entry_price * 100 if exit_price else 0
+                    exit_date, exit_price, exit_reason, days_held, max_gain, max_dd = self.simulate_trade(
+                        df, i, entry_price, stop_loss, target_price
+                    )
 
-                trade = Trade(
-                    symbol=symbol,
-                    entry_type=entry_signal.entry_type.value,
-                    entry_date=entry_date,
-                    entry_price=entry_price,
-                    stop_loss=stop_loss,
-                    target_price=target_price,
-                    exit_date=exit_date,
-                    exit_price=exit_price,
-                    exit_reason=exit_reason,
-                    pnl_pct=pnl_pct,
-                    days_held=days_held,
-                    max_gain_pct=max_gain,
-                    max_drawdown_pct=max_dd,
-                    risk_pct=entry_signal.risk_pct,
-                    overall_score=pattern.overall_score,
-                    prior_advance_pct=pattern.prior_uptrend.advance_pct,
-                    position_in_base=entry_signal.position_in_base
-                )
+                    pnl_pct = (exit_price - entry_price) / entry_price * 100 if exit_price else 0
 
-                trades.append(trade)
+                    trade = Trade(
+                        symbol=symbol,
+                        entry_type=entry_signal.entry_type.value,
+                        entry_date=entry_date,
+                        entry_price=entry_price,
+                        stop_loss=stop_loss,
+                        target_price=target_price,
+                        exit_date=exit_date,
+                        exit_price=exit_price,
+                        exit_reason=exit_reason,
+                        pnl_pct=pnl_pct,
+                        days_held=days_held,
+                        max_gain_pct=max_gain,
+                        max_drawdown_pct=max_dd,
+                        risk_pct=entry_signal.risk_pct,
+                        overall_score=pattern.overall_score,
+                        prior_advance_pct=pattern.prior_uptrend.advance_pct,
+                        position_in_base=entry_signal.position_in_base
+                    )
 
-                if days_held:
-                    last_trade_exit_idx = i + days_held
+                    trades.append(trade)
+
+                # Use longest hold for exit index (only skip pattern once all entries done)
+                max_days = max(t.days_held for t in trades[-len(entry_signals):] if t.days_held) if trades else 0
+                if max_days:
+                    last_trade_exit_idx = i + max_days
                 else:
                     last_trade_exit_idx = i + 1
 
@@ -627,6 +648,12 @@ def main():
         BacktestConfig(
             name="cheat_and_low_cheat",
             allowed_entry_types=[EntryType.LOW_CHEAT, EntryType.CHEAT]
+        ),
+        BacktestConfig(
+            name="all_independent",
+            allowed_entry_types=[EntryType.LOW_CHEAT, EntryType.CHEAT,
+                                EntryType.HANDLE, EntryType.PIVOT_BREAKOUT],
+            take_all_entries=True  # Take ALL valid entries, not just best one
         ),
     ]
 
