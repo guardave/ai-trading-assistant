@@ -85,9 +85,9 @@ def generate_v4_chart(
 ):
     """Generate a detailed chart for a V4 VCP trade."""
 
-    # Get data with extended history
+    # Get data with extended history (250 days for full 200 MA display)
     end_dt = pd.Timestamp(exit_date) + timedelta(days=10)
-    start_dt = pd.Timestamp(entry_date) - timedelta(days=150)
+    start_dt = pd.Timestamp(entry_date) - timedelta(days=280)
 
     df = get_stock_data(symbol, start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d'))
 
@@ -107,8 +107,8 @@ def generate_v4_chart(
     detector = VCPDetectorV4()
     pattern = detector.analyze_pattern(df_to_entry, lookback_days=120)
 
-    # Define display range (60 days before entry to exit + 5 days)
-    display_start = entry_dt - timedelta(days=90)
+    # Define display range (220 days before entry for full MA display, to exit + 5 days)
+    display_start = entry_dt - timedelta(days=220)
     display_end = pd.Timestamp(exit_date) + timedelta(days=5)
     df_display = df[(df.index >= display_start) & (df.index <= display_end)]
 
@@ -116,9 +116,9 @@ def generate_v4_chart(
         print(f"Display range too small for {symbol}")
         return False
 
-    # Create figure
+    # Create figure (wider for more data)
     fig, (ax_price, ax_volume) = plt.subplots(
-        2, 1, figsize=(14, 10),
+        2, 1, figsize=(18, 11),
         gridspec_kw={'height_ratios': [3, 1]},
         sharex=True
     )
@@ -277,20 +277,61 @@ def generate_v4_chart(
 
     # Price axis formatting
     ax_price.set_ylabel('Price ($)', fontsize=10)
-    ax_price.legend(loc='upper left', fontsize=8, ncol=2)
+    ax_price.legend(loc='lower left', fontsize=8, ncol=2)
     ax_price.grid(True, alpha=0.3)
     ax_volume.grid(True, alpha=0.3)
 
-    # Add info box
+    # Add trade info box (top right)
     info_text = (
         f"Entry: {entry_date}\n"
         f"Exit: {exit_date}\n"
         f"Days Held: {(pd.Timestamp(exit_date) - pd.Timestamp(entry_date)).days}"
     )
 
-    ax_price.text(0.98, 0.98, info_text, transform=ax_price.transAxes,
+    ax_price.text(0.99, 0.99, info_text, transform=ax_price.transAxes,
                   fontsize=9, verticalalignment='top', horizontalalignment='right',
-                  bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+                  bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
+
+    # Add V4 Rules Validation Box (left side)
+    if pattern:
+        tt = pattern.trend_template
+        pu = pattern.prior_uptrend
+
+        # Build rules checklist
+        rules_lines = ["V4 RULES VALIDATION", "=" * 22]
+
+        # Prior Uptrend
+        pu_status = "PASS" if pu.is_valid else "FAIL"
+        rules_lines.append(f"Prior Uptrend (≥30%): {pu_status}")
+        rules_lines.append(f"  Advance: {pu.advance_pct:.1f}%")
+
+        rules_lines.append("")
+        rules_lines.append("Trend Template:")
+
+        # Trend template checks
+        for check_name, (status, msg) in tt.checks.items():
+            symbol_char = "✓" if status.value == "PASS" else ("!" if status.value == "WARN" else "✗")
+            short_name = check_name.replace("_", " ").title()[:18]
+            rules_lines.append(f"  {symbol_char} {short_name}")
+
+        rules_lines.append("")
+        rules_lines.append("VCP Pattern:")
+        rules_lines.append(f"  Contractions: {pattern.num_contractions}")
+        rules_lines.append(f"  First: {pattern.first_contraction_pct:.1f}%")
+        rules_lines.append(f"  Final: {pattern.final_contraction_pct:.1f}%")
+        rules_lines.append(f"  Base Duration: {pattern.base_duration_days}d")
+        rules_lines.append(f"  Tightening: {pattern.avg_tightening_ratio:.2f}x")
+
+        rules_lines.append("")
+        rules_lines.append(f"Overall Score: {pattern.overall_score:.0f}/100")
+        rules_lines.append(f"Pattern Valid: {'YES' if pattern.is_valid else 'NO'}")
+
+        rules_text = "\n".join(rules_lines)
+
+        ax_price.text(0.01, 0.99, rules_text, transform=ax_price.transAxes,
+                      fontsize=8, verticalalignment='top', horizontalalignment='left',
+                      fontfamily='monospace',
+                      bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.95, edgecolor='gray'))
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight',
