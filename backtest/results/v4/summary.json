@@ -1,0 +1,23 @@
+{
+  "detector_version": "V4",
+  "total_trades": 36,
+  "winning_trades": 21,
+  "losing_trades": 15,
+  "win_rate": 58.333333333333336,
+  "avg_win_pct": 8.932795779241294,
+  "avg_loss_pct": -6.4532376345806,
+  "profit_factor": 1.937928649012253,
+  "total_return_pct": 90.79014684535821,
+  "avg_days_held": 20.305555555555557,
+  "avg_overall_score": 95.72222222222223,
+  "config": {
+    "stop_loss_pct": 7.0,
+    "target_rr": 3.0,
+    "use_trailing_stop": true,
+    "min_overall_score": 70.0,
+    "require_valid_pattern": true,
+    "start_date": "2020-01-01",
+    "end_date": "2024-12-31",
+    "num_symbols": 68
+  }
+}
