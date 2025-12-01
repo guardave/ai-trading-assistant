@@ -61,6 +61,7 @@ This strategy covers:
 |--------|-----------------|
 | portfolio/ | 95% |
 | scanner/ | 90% |
+| **vcp/** | 90% |
 | ai/ | 85% |
 | data/ | 85% |
 | storage/ | 90% |
@@ -313,6 +314,13 @@ tests/
 │   ├── test_scanner/
 │   │   ├── test_vcp.py
 │   │   └── test_pivot.py
+│   ├── test_vcp/                    # VCP Alert System tests
+│   │   ├── test_models.py           # Alert, AlertChain dataclasses
+│   │   ├── test_detector.py         # VCPDetector pattern detection
+│   │   ├── test_alert_manager.py    # AlertManager business logic
+│   │   ├── test_repository.py       # AlertRepository persistence
+│   │   ├── test_notifications.py    # NotificationHub channels
+│   │   └── test_alert_system.py     # VCPAlertSystem orchestration
 │   ├── test_ai/
 │   │   ├── test_engine.py
 │   │   └── test_providers.py
@@ -325,7 +333,8 @@ tests/
 │   ├── test_bot_commands.py
 │   ├── test_api_endpoints.py
 │   ├── test_scan_workflow.py
-│   └── test_trade_workflow.py
+│   ├── test_trade_workflow.py
+│   └── test_vcp_alert_workflow.py   # Full alert chain integration
 ├── e2e/
 │   ├── __init__.py
 │   └── test_full_scenarios.py
@@ -336,6 +345,7 @@ tests/
 └── fixtures/
     ├── portfolio_data.py
     ├── market_data.py
+    ├── vcp_pattern_data.py          # VCP pattern test fixtures
     └── mock_responses.py
 ```
 
@@ -428,6 +438,7 @@ def test_add_position_with_insufficient_funds():
 |-----------|--------|------------|------------|------------------|
 | Portfolio Manager | High | Medium | High | P1 |
 | Trade Execution | High | Low | Medium | P1 |
+| **VCP Alert System** | High | Medium | High | P1 |
 | AI Analysis | Medium | Medium | Medium | P2 |
 | Data Providers | Medium | High | High | P1 |
 | Telegram Bot | Low | Low | Low | P3 |
@@ -439,6 +450,7 @@ def test_add_position_with_insufficient_funds():
 1. Add Position → Update Position → Close Position
 2. Scan Watchlist → Detect Pattern → Send Alert
 3. Receive Command → Process → Respond
+4. **VCP Alert Flow:** Detect Pattern → Contraction Alert → Pre-Alert → Trade Alert → Notify
 
 ### 8.3 Regression Test Selection
 
@@ -553,13 +565,144 @@ pip-audit>=2.6.0
 
 ---
 
-## 12. Multi-Agent Collaboration Framework
+## 12. VCP Alert System Test Strategy
 
 ### 12.1 Overview
 
+The VCP Alert System is a critical component requiring comprehensive testing due to its:
+- **State management** - Alert lifecycle (PENDING → NOTIFIED → CONVERTED → EXPIRED)
+- **Persistence requirements** - All alerts must be reliably stored and queryable
+- **Notification reliability** - Alerts must reach users without duplication or loss
+- **Pattern detection accuracy** - Incorrect alerts impact trading decisions
+
+### 12.2 Test Categories
+
+| Category | Focus Area | Coverage Target |
+|----------|------------|-----------------|
+| Unit Tests | Individual components in isolation | 90% |
+| Integration Tests | Component interactions, DB operations | 85% |
+| State Machine Tests | Alert state transitions | 100% |
+| Notification Tests | Channel delivery, formatting | 80% |
+
+### 12.3 Component Test Focus
+
+#### VCPDetector
+- Pattern detection with known VCP stocks (positive cases)
+- Rejection of non-VCP patterns (negative cases)
+- Edge cases: staircase patterns, loosening contractions
+- Score calculation accuracy
+
+#### AlertManager
+- Alert creation with proper deduplication
+- State transition correctness
+- Alert chain linkage (parent_alert_id)
+- Expiration logic
+- Subscriber notification
+
+#### AlertRepository
+- CRUD operations
+- Query filtering (by symbol, type, state, date range)
+- Concurrent access handling
+- Data integrity on restarts
+
+#### NotificationHub
+- Channel registration
+- Multi-channel dispatch
+- Failure isolation (one channel failure doesn't block others)
+- Message formatting per channel
+
+### 12.4 Test Data Requirements
+
+**VCP Pattern Fixtures:**
+```python
+# Known VCP patterns from backtest (use as positive test cases)
+VCP_POSITIVE_CASES = [
+    {"symbol": "NVDA", "date": "2024-01-08", "contractions": 2, "score": 96},
+    {"symbol": "TSLA", "date": "2023-06-15", "contractions": 4, "score": 85},
+]
+
+# Known non-VCP patterns (use as negative test cases)
+VCP_NEGATIVE_CASES = [
+    {"symbol": "AAPL", "date": "2023-05-01", "reason": "staircase"},
+    {"symbol": "GOOGL", "date": "2023-08-15", "reason": "loosening"},
+]
+```
+
+**Alert Fixtures:**
+```python
+# Sample alerts for state transition testing
+SAMPLE_CONTRACTION_ALERT = Alert(
+    symbol="NVDA",
+    alert_type=AlertType.CONTRACTION,
+    state=AlertState.PENDING,
+    trigger_price=48.50,
+    pivot_price=52.00,
+    score=75,
+)
+```
+
+### 12.5 State Machine Test Matrix
+
+| Initial State | Trigger | Expected State | Validation |
+|---------------|---------|----------------|------------|
+| PENDING | notify() | NOTIFIED | updated_at changed |
+| PENDING | convert(child_id) | CONVERTED | converted_at set, child linked |
+| PENDING | expire() | EXPIRED | expired_at set |
+| NOTIFIED | complete() | COMPLETED | (trade alerts only) |
+| CONVERTED | any | CONVERTED | No state change allowed |
+| EXPIRED | any | EXPIRED | No state change allowed |
+
+### 12.6 Integration Test Scenarios
+
+1. **Full Alert Chain Flow**
+   - Detect pattern → Create contraction alert
+   - Price approaches pivot → Create pre-alert, convert contraction
+   - Entry signal fires → Create trade alert, convert pre-alert
+   - Verify all alerts persisted with correct linkage
+
+2. **Alert Expiration**
+   - Create contraction alert
+   - Advance time 21 days
+   - Run expire_stale_alerts()
+   - Verify alert state = EXPIRED
+
+3. **Notification Delivery**
+   - Subscribe mock handlers
+   - Create alert
+   - Verify all handlers called with correct alert data
+
+4. **Repository Recovery**
+   - Create alerts, close connection
+   - Reopen connection
+   - Verify all alerts retrievable
+
+### 12.7 Performance Benchmarks
+
+| Operation | Target | Measurement |
+|-----------|--------|-------------|
+| Pattern analysis (single symbol) | < 100ms | pytest-benchmark |
+| Alert creation + persistence | < 50ms | pytest-benchmark |
+| Alert query (by symbol) | < 10ms | pytest-benchmark |
+| Full scan (100 symbols) | < 60s | Integration test |
+
+### 12.8 Mocking Strategy
+
+| External Dependency | Mock Approach |
+|---------------------|---------------|
+| Price data (yfinance) | Pre-loaded DataFrame fixtures |
+| Database | SQLite in-memory |
+| Notification channels | Mock handlers with call tracking |
+| Current time | freezegun for time-based tests |
+
+---
+
+## 13. Multi-Agent Collaboration Framework
+
+### 13.1 Overview
+
 For complex testing tasks such as strategy backtesting, a multi-agent collaboration framework is employed to ensure quality and thoroughness. This framework uses specialized agents working in parallel with defined handoff protocols.
 
-### 12.2 Agent Roles
+### 13.2 Agent Roles
 
 | Agent | Role | Workspace | Responsibility |
 |-------|------|-----------|----------------|
@@ -567,7 +710,7 @@ For complex testing tasks such as strategy backtesting, a multi-agent collaborat
 | **Executor** | Task Runner | `agents/executor/` | Executes tests, produces results, documents methodology |
 | **Reviewer** | Quality Assurance | `agents/reviewer/` | Validates results, checks methodology, flags issues |
 
-### 12.3 Workspace Structure
+### 13.3 Workspace Structure
 
 ```
 agents/
@@ -584,7 +727,7 @@ agents/
     └── approved/               # Approved for final delivery
 ```
 
-### 12.4 Communication Protocol
+### 13.4 Communication Protocol
 
 **Handoff Mechanism:**
 1. Executor completes work → places in `executor/handoff/`
@@ -600,7 +743,7 @@ agents/
 - Blocking issues
 - Notes for other agents
 
-### 12.5 Quality Gates
+### 13.5 Quality Gates
 
 **Before Handoff (Executor):**
 - [ ] Results are complete and formatted
@@ -618,14 +761,14 @@ agents/
 - [ ] Results are reproducible
 - [ ] Documentation is complete
 
-### 12.6 Issue Resolution
+### 13.6 Issue Resolution
 
 1. **Technical Issues**: Reviewer creates `ISSUE_[phase]_[number].md` in `issues/`
 2. **Executor Response**: Must address before proceeding to next phase
 3. **Escalation**: Unresolved issues escalate to Supervisor
 4. **Documentation**: All issues and resolutions logged for future reference
 
-### 12.7 Cross-Agent Visibility
+### 13.7 Cross-Agent Visibility
 
 Agents are permitted and encouraged to:
 - Inspect each other's workspace folders
@@ -633,7 +776,7 @@ Agents are permitted and encouraged to:
 - Reference execution logs for context
 - Review approved deliverables for consistency
 
-### 12.8 Final Deliverables
+### 13.8 Final Deliverables
 
 Only Supervisor-approved work moves to production folders:
 - Test results → appropriate `results/` folder
@@ -642,9 +785,10 @@ Only Supervisor-approved work moves to production folders:
 
 ---
 
-## 13. Document History
+## 14. Document History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-11-28 | Claude | Initial draft |
-| 1.1.0 | 2025-11-29 | Claude | Added multi-agent collaboration framework (Section 12) |
+| 1.1.0 | 2025-11-29 | Claude | Added multi-agent collaboration framework (Section 13) |
+| 1.2.0 | 2025-11-30 | Claude | Added VCP Alert System test strategy (Section 12) |

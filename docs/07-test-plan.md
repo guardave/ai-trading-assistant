@@ -372,9 +372,120 @@ This plan covers testing for:
 
 ---
 
-## 10. Performance Test Plan
+## 10. VCP Alert System Test Plan
 
-### 10.1 Benchmark Tests
+### 10.1 Unit Tests
+
+#### 10.1.1 Alert Models
+
+| Test ID | Test Case | Input | Expected Output | Priority |
+|---------|-----------|-------|-----------------|----------|
+| AM-001 | Create Alert with defaults | symbol, alert_type, trigger_price | Alert with UUID, PENDING state | P0 |
+| AM-002 | Alert state transition | PENDING → NOTIFIED | state updated, updated_at changed | P0 |
+| AM-003 | Invalid state transition | EXPIRED → PENDING | Raises ValueError | P1 |
+| AM-004 | AlertChain lead time calculation | chain with contraction + trade | Correct days calculated | P1 |
+| AM-005 | Alert serialization | Alert object | JSON-serializable dict | P1 |
+
+#### 10.1.2 VCPDetector
+
+| Test ID | Test Case | Input | Expected Output | Priority |
+|---------|-----------|-------|-----------------|----------|
+| VD-001 | Detect valid VCP - NVDA | NVDA data 2024-01-08 | VCPPattern with 2+ contractions | P0 |
+| VD-002 | Detect valid VCP - TSLA | TSLA data with 4 contractions | VCPPattern with score > 80 | P0 |
+| VD-003 | Reject staircase - AAPL | AAPL staircase data | None or is_valid=False | P0 |
+| VD-004 | Reject loosening - GOOGL | GOOGL loosening data | None or is_valid=False | P0 |
+| VD-005 | Calculate pattern score | Valid pattern | Score 0-100 | P1 |
+| VD-006 | Detect entry signals | Pattern near pivot | List of EntrySignal | P1 |
+| VD-007 | Handle insufficient data | < 30 days data | None returned | P1 |
+
+#### 10.1.3 AlertManager
+
+| Test ID | Test Case | Input | Expected Output | Priority |
+|---------|-----------|-------|-----------------|----------|
+| MG-001 | Create contraction alert | Pattern with 2+ contractions, score >= 60 | Alert created and persisted | P0 |
+| MG-002 | Create pre-alert | Pattern with price within 3% of pivot | PRE_ALERT created | P0 |
+| MG-003 | Create trade alert | Pattern with entry signal | TRADE alert created | P0 |
+| MG-004 | Deduplicate alert | Same symbol/type/date | Existing alert returned | P0 |
+| MG-005 | Link alert chain | Pre-alert from contraction | parent_alert_id set correctly | P0 |
+| MG-006 | Expire stale contraction | Alert > 20 days old | State = EXPIRED | P1 |
+| MG-007 | Expire stale pre-alert | Alert > 5 days old | State = EXPIRED | P1 |
+| MG-008 | Notify subscribers | New alert created | All handlers called | P0 |
+| MG-009 | Get active alerts | symbol="NVDA" | List of PENDING/NOTIFIED alerts | P1 |
+| MG-010 | Get alert chain | trade_alert_id | Full AlertChain object | P1 |
+
+#### 10.1.4 AlertRepository
+
+| Test ID | Test Case | Input | Expected Output | Priority |
+|---------|-----------|-------|-----------------|----------|
+| RP-001 | Save alert | Valid Alert object | Alert persisted, retrievable | P0 |
+| RP-002 | Get by ID | Existing alert_id | Alert returned | P0 |
+| RP-003 | Get by ID - not found | Non-existent ID | None returned | P1 |
+| RP-004 | Update alert | Alert with changed state | Update persisted | P0 |
+| RP-005 | Query by symbol | symbol="NVDA" | All NVDA alerts | P0 |
+| RP-006 | Query by type | alert_type=CONTRACTION | All contraction alerts | P1 |
+| RP-007 | Query by state | state=PENDING | All pending alerts | P1 |
+| RP-008 | Query by date range | start, end dates | Alerts in range | P1 |
+| RP-009 | Get children | parent_alert_id | Child alerts | P1 |
+| RP-010 | Get expiring | before datetime | Alerts past TTL | P1 |
+
+#### 10.1.5 NotificationHub
+
+| Test ID | Test Case | Input | Expected Output | Priority |
+|---------|-----------|-------|-----------------|----------|
+| NH-001 | Register channel | TelegramChannel | Channel in registry | P0 |
+| NH-002 | Dispatch to all channels | Alert | All channels receive alert | P0 |
+| NH-003 | Channel failure isolation | One channel throws | Others still receive | P0 |
+| NH-004 | Filter by alert type | Channel with type filter | Only matching alerts sent | P1 |
+| NH-005 | Format message | Alert | Channel-specific message | P1 |
+
+### 10.2 Integration Tests
+
+| Test ID | Test Case | Description | Priority |
+|---------|-----------|-------------|----------|
+| VI-001 | Full alert chain flow | Detect → Contraction → Pre-Alert → Trade | P0 |
+| VI-002 | Alert persistence recovery | Create alerts, restart, verify | P0 |
+| VI-003 | Multi-symbol scan | Scan 10 symbols, verify alerts | P1 |
+| VI-004 | Expiration job | Create old alerts, run expiration | P1 |
+| VI-005 | Notification delivery | Create alert, verify handlers called | P0 |
+| VI-006 | Alert history query | Create many alerts, test filters | P1 |
+| VI-007 | Concurrent alert creation | Parallel alert creation | P2 |
+
+### 10.3 Test Data
+
+```python
+# VCP Pattern Test Fixtures
+VCP_TEST_PATTERNS = {
+    "NVDA_2024": {
+        "symbol": "NVDA",
+        "date": "2024-01-08",
+        "expected_contractions": 2,
+        "expected_score_min": 90,
+        "expected_valid": True
+    },
+    "AAPL_STAIRCASE": {
+        "symbol": "AAPL",
+        "date": "2023-05-01",
+        "expected_valid": False,
+        "rejection_reason": "staircase"
+    }
+}
+
+# Alert State Transition Matrix
+STATE_TRANSITIONS = [
+    ("PENDING", "notify", "NOTIFIED", True),
+    ("PENDING", "convert", "CONVERTED", True),
+    ("PENDING", "expire", "EXPIRED", True),
+    ("NOTIFIED", "complete", "COMPLETED", True),
+    ("EXPIRED", "notify", None, False),  # Invalid
+    ("CONVERTED", "expire", None, False),  # Invalid
+]
+```
+
+---
+
+## 11. Performance Test Plan
+
+### 11.1 Benchmark Tests
 
 | Test ID | Test Case | Target | Priority |
 |---------|-----------|--------|----------|
@@ -383,7 +494,7 @@ This plan covers testing for:
 | PF-003 | Portfolio calculation | < 100ms | P2 |
 | PF-004 | Memory usage (idle) | < 256MB | P2 |
 
-### 10.2 Load Tests
+### 11.2 Load Tests
 
 | Test ID | Test Case | Load | Target | Priority |
 |---------|-----------|------|--------|----------|
@@ -392,9 +503,9 @@ This plan covers testing for:
 
 ---
 
-## 11. Test Data
+## 12. Test Data
 
-### 11.1 Test Portfolios
+### 12.1 Test Portfolios
 
 ```python
 # Empty portfolio
@@ -427,7 +538,7 @@ MULTI_CURRENCY = {
 }
 ```
 
-### 11.2 Mock API Responses
+### 12.2 Mock API Responses
 
 ```python
 # Mock price response
@@ -456,9 +567,9 @@ MOCK_HISTORICAL = pd.DataFrame({
 
 ---
 
-## 12. Test Execution
+## 13. Test Execution
 
-### 12.1 Run All Tests
+### 13.1 Run All Tests
 
 ```bash
 # Run full test suite
@@ -474,7 +585,7 @@ pytest tests/unit/test_portfolio/
 pytest tests/unit/test_portfolio/test_manager.py::test_add_position_success
 ```
 
-### 12.2 Test Tags
+### 13.2 Test Tags
 
 ```bash
 # Run only unit tests
@@ -490,14 +601,15 @@ pytest -m "p0"
 pytest -m "not slow"
 ```
 
-### 12.3 CI Execution
+### 13.3 CI Execution
 
 Tests are automatically run on every push via GitHub Actions (see Test Strategy).
 
 ---
 
-## 13. Document History
+## 14. Document History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-11-28 | Claude | Initial draft |
+| 1.1.0 | 2025-11-30 | Claude | Added VCP Alert System test plan (Section 10) |
