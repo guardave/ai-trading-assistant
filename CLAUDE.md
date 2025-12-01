@@ -198,6 +198,12 @@ See `docs/three-stage-alert-backtest-results.md` for full analysis.
 - Business Requirements: `docs/01-business-requirements.md` (Section 4.8)
 - System Requirements: `docs/02-system-requirements.md` (Section 5)
 - System Design: `docs/03-system-design.md` (Section 8)
+- Test Strategy: `docs/06-test-strategy.md` (Section 12)
+- Test Plan: `docs/07-test-plan.md` (Section 10)
+
+### Agent SOPs
+- Developer: `agents/developer/SOP.md`
+- Tester: `agents/tester/SOP.md`
 
 ## Technical Notes
 
