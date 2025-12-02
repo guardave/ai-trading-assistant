@@ -2,9 +2,9 @@
 
 ## AI Trading Assistant
 
-**Version:** 1.0.0
-**Date:** 2025-11-28
-**Status:** Draft
+**Version:** 1.2.0
+**Date:** 2025-12-02
+**Status:** Active (VCPAlertSystem with Staleness Detection)
 
 ---
 
@@ -1007,13 +1007,30 @@ GET /health
 │ - min_contractions: int = 2          │
 │ - swing_lookback: int = 5            │
 │ - max_contraction_gap: int = 30      │
+│ - enable_staleness_check: bool = True│
+│ - max_days_since_contraction: int=42 │
+│ - max_pivot_violations: int = 2      │
+│ - max_support_violations: int = 1    │
 ├──────────────────────────────────────┤
 │ + analyze(df: DataFrame) -> Optional[VCPPattern]           │
 │ + detect_contractions(df) -> List[Contraction]             │
 │ + calculate_score(pattern) -> float                        │
 │ + get_entry_signals(pattern, df) -> List[EntrySignal]      │
+│ + _check_staleness(df, pattern) -> VCPPattern              │
+│ + _count_pivot_violations(df, pivot, start) -> int         │
+│ + _count_support_violations(df, support, start) -> int     │
 └──────────────────────────────────────┘
 ```
+
+**Staleness Detection:**
+The detector checks for pattern validity after contraction detection:
+- **Time Decay**: Patterns older than 42 trading days (6 weeks) are marked stale
+- **Pivot Violations**: If price crossed above pivot then fell back (max 2 allowed)
+- **Support Violations**: If price closed below support (invalidates pattern)
+
+Staleness metrics are stored in VCPPattern:
+- `days_since_last_contraction`, `pivot_violations`, `support_violations`
+- `is_stale`, `freshness_score` (0-100), `staleness_reasons`
 
 #### 8.2.2 AlertManager
 
@@ -1284,7 +1301,9 @@ src/
     ├── alert_manager.py   # AlertManager class
     ├── repository.py      # AlertRepository protocol + SQLite implementation
     ├── notifications.py   # NotificationHub + channel implementations
-    └── alert_system.py    # VCPAlertSystem orchestrator
+    ├── alert_system.py    # VCPAlertSystem orchestrator
+    ├── chart.py           # Matplotlib static chart generation
+    └── chart_lightweight.py  # TradingView Lightweight Charts dashboard
 
 tests/
 └── vcp/
@@ -1292,8 +1311,149 @@ tests/
     ├── test_detector.py
     ├── test_alert_manager.py
     ├── test_repository.py
+    ├── test_notifications.py
     └── test_alert_system.py
 ```
+
+### 8.8 Chart Generation Components
+
+#### 8.8.1 Static Chart Generator (Matplotlib)
+
+```
+┌──────────────────────────────────────┐
+│          ChartGenerator              │
+├──────────────────────────────────────┤
+│ - output_dir: Path                   │
+├──────────────────────────────────────┤
+│ + generate_chart(symbol, df,         │
+│     pattern, alerts) -> Path         │
+│ + generate_batch(results,            │
+│     max_per_category) -> Dict        │
+└──────────────────────────────────────┘
+```
+
+**Features:**
+- Candlestick charts with OHLCV data
+- Volume bars with color coding
+- Contraction zones highlighted (shaded regions)
+- Pivot and support price lines
+- Alert markers (triangles) with color by type
+- Pattern score annotation
+- Automatic file organization by alert type
+
+**Output Structure:**
+```
+charts/
+├── trade_alerts/
+│   ├── AAPL_vcp.png
+│   └── NVDA_vcp.png
+├── pre_alerts/
+│   └── MSFT_vcp.png
+└── contraction_alerts/
+    └── GOOGL_vcp.png
+```
+
+#### 8.8.2 Interactive Dashboard Generator (TradingView Lightweight Charts)
+
+```
+┌──────────────────────────────────────┐
+│     LightweightChartGenerator        │
+├──────────────────────────────────────┤
+│ - output_dir: Path                   │
+├──────────────────────────────────────┤
+│ + generate_dashboard(scan_results,   │
+│     filename) -> Path                │
+│ - _prepare_chart_data(result) -> Dict│
+│ - _render_template(data) -> str      │
+└──────────────────────────────────────┘
+```
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HTML Dashboard File                           │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌───────────────────────────────────────┐ │
+│  │   Sidebar       │  │          Chart Area                   │ │
+│  │                 │  │  ┌─────────────────────────────────┐  │ │
+│  │ [Filter Btns]   │  │  │   TradingView Candlestick       │  │ │
+│  │ ○ All           │  │  │   Chart (Lightweight Charts)    │  │ │
+│  │ ○ Trade         │  │  │                                 │  │ │
+│  │ ○ Pre-Alert     │  │  │   - Series markers for alerts   │  │ │
+│  │ ○ Contraction   │  │  │   - Price lines for pivot/stop  │  │ │
+│  │                 │  │  │                                 │  │ │
+│  │ [Search Box]    │  │  └─────────────────────────────────┘  │ │
+│  │                 │  │  ┌─────────────────────────────────┐  │ │
+│  │ [Stock List]    │  │  │   Volume Chart                  │  │ │
+│  │ > AAPL ★        │  │  └─────────────────────────────────┘  │ │
+│  │   NVDA ●        │  │                                       │ │
+│  │   MSFT ◆        │  │  ┌─────────────────────────────────┐  │ │
+│  │   ...           │  │  │   Pattern Info Panel            │  │ │
+│  └─────────────────┘  │  │   Score: 85 | Contractions: 3   │  │ │
+│                       │  └─────────────────────────────────┘  │ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Technology Stack:**
+- TradingView Lightweight Charts v4.1.0 (CDN)
+- Vanilla JavaScript (no framework dependencies)
+- Embedded JSON data (no server required)
+- Single HTML file deployment
+
+**Data Format (embedded JSON):**
+```javascript
+const VCP_DATA = {
+    "AAPL": {
+        "ohlcv": [
+            {"time": "2025-01-02", "open": 150.0, "high": 152.0,
+             "low": 149.0, "close": 151.5, "volume": 50000000},
+            // ... more bars
+        ],
+        "pattern": {
+            "contractions": [
+                {"start_date": "2025-01-10", "end_date": "2025-01-20",
+                 "high": 155.0, "low": 148.0, "depth_pct": 4.5},
+            ],
+            "pivot_price": 156.0,
+            "support_price": 148.0,
+            "score": 85.0
+        },
+        "alerts": [
+            {"type": "trade", "date": "2025-01-25", "price": 156.5}
+        ],
+        "alert_type": "trade"  // highest priority alert
+    },
+    // ... more symbols
+};
+```
+
+**Features:**
+- Instant chart switching (no network requests)
+- Filter buttons by alert type
+- Real-time search filtering
+- Keyboard navigation (↑↓ arrows)
+- Responsive layout
+- Alert type indicators (★ Trade, ● Pre-Alert, ◆ Contraction)
+- Contraction zones visualization
+- Pivot/support price lines
+
+### 8.9 Implementation Status
+
+**VCPAlertSystem - COMPLETE ✅**
+
+| Component | Status | Tests |
+|-----------|--------|-------|
+| models.py | ✅ Complete | 32 tests |
+| detector.py | ✅ Complete | 15 tests |
+| alert_manager.py | ✅ Complete | 27 tests |
+| repository.py | ✅ Complete | 20 tests |
+| notifications.py | ✅ Complete | 26 tests |
+| alert_system.py | ✅ Complete | 24 tests |
+| chart.py | ✅ Complete | - |
+| chart_lightweight.py | ✅ Complete | - |
+
+**Total: 144 unit tests passing**
 
 ---
 
@@ -1302,6 +1462,7 @@ tests/
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-11-28 | Claude | Initial draft |
+| 1.1.0 | 2025-12-01 | Claude | VCPAlertSystem implementation complete, added charting components |
 
 ---
 
@@ -1321,6 +1482,9 @@ tests/
 | Data Analysis | Pandas | 2.x | Data processing |
 | HTTP Client | Requests/HTTPX | - | API calls |
 | Containerization | Docker | 24+ | Deployment |
+| Static Charts | Matplotlib | 3.x | PNG chart generation |
+| Interactive Charts | TradingView Lightweight Charts | 4.1.0 | HTML dashboard |
+| Market Data | yfinance | - | Yahoo Finance API |
 
 ### Appendix B: Project Structure
 

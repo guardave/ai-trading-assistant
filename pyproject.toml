@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-trading-assistant"
+version = "0.1.0"
+description = "AI-powered trading assistant with VCP pattern detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "dawo", email = "dawo.dev@idficient.com"}
+]
+dependencies = [
+    "yfinance>=0.2.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+vcp-scan = "script.vcp_scan:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "script*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.html"]

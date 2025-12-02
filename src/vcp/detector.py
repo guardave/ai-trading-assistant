@@ -37,6 +37,14 @@ class DetectorConfig:
     consolidation_tolerance: float = 0.03  # 3% tolerance for highs above base
     lookback_days: int = 120          # Days to look back for pattern
 
+    # Staleness detection settings
+    enable_staleness_check: bool = True  # Set to False to use legacy behavior
+    max_days_since_contraction: int = 42  # 6 weeks - pattern becomes stale after this
+    stale_penalty_per_week: float = 15.0  # Score reduction per week over threshold
+    max_pivot_violations: int = 2     # Pattern marked stale after this many violations
+    max_support_violations: int = 1   # Pattern invalid after support break
+    pivot_violation_buffer: float = 0.005  # 0.5% buffer above pivot to count as violation
+
 
 class VCPDetector:
     """
@@ -109,7 +117,7 @@ class VCPDetector:
         pivot_price = max(c.swing_high.price for c in valid_contractions)
         support_price = valid_contractions[-1].swing_low.price
 
-        return VCPPattern(
+        pattern = VCPPattern(
             symbol=symbol,
             contractions=valid_contractions,
             is_valid=is_valid,
@@ -121,6 +129,12 @@ class VCPDetector:
             support_price=support_price,
             detection_date=datetime.now(),
         )
+
+        # Check for staleness (time decay and price violations)
+        # This can be disabled via config.enable_staleness_check = False
+        pattern = self._check_staleness(df_analysis, pattern)
+
+        return pattern
 
     def detect_contractions(
         self,
@@ -470,7 +484,7 @@ class VCPDetector:
             reasons.append("Contractions NOT progressively tighter")
 
         # Check 3: Final contraction is tight enough
-        final_range = contractions[-1].range_pct
+        final_range = float(contractions[-1].range_pct)
         if final_range <= self.config.max_contraction_range:
             reasons.append(f"Final contraction tight ({final_range:.1f}%)")
         else:
@@ -479,7 +493,7 @@ class VCPDetector:
 
         # Check 4: Volume dry-up in later contractions
         if len(contractions) >= 2:
-            later_vol = np.mean([c.avg_volume_ratio for c in contractions[-2:]])
+            later_vol = float(np.mean([c.avg_volume_ratio for c in contractions[-2:]]))
             if later_vol < 1.0:
                 reasons.append(f"Volume dry-up present ({later_vol:.2f}x avg)")
             else:
@@ -521,7 +535,7 @@ class VCPDetector:
             return 50.0
 
         score = 100.0
-        vol_ratios = [c.avg_volume_ratio for c in contractions]
+        vol_ratios = [float(c.avg_volume_ratio) for c in contractions]
 
         # Check for decreasing volume
         for i in range(len(vol_ratios) - 1):
@@ -617,3 +631,178 @@ class VCPDetector:
 
         # Handle should be shallow (< 10% depth)
         return handle_depth < 0.10
+
+    # =========================================================================
+    # Staleness Detection Methods
+    # =========================================================================
+
+    def _check_staleness(
+        self,
+        df: pd.DataFrame,
+        pattern: VCPPattern,
+    ) -> VCPPattern:
+        """
+        Check pattern for staleness based on time and price violations.
+
+        Updates the pattern's staleness metrics in place and returns it.
+
+        Args:
+            df: Full DataFrame with OHLCV data
+            pattern: VCPPattern to check
+
+        Returns:
+            Updated VCPPattern with staleness metrics
+        """
+        if not self.config.enable_staleness_check:
+            # Legacy mode - skip staleness checks
+            return pattern
+
+        if not pattern.contractions:
+            return pattern
+
+        staleness_reasons = []
+
+        # Get last contraction's end point
+        last_contraction = pattern.contractions[-1]
+        last_contraction_end_idx = last_contraction.swing_low.index
+
+        # Calculate days since last contraction
+        days_since = len(df) - 1 - last_contraction_end_idx
+        pattern.days_since_last_contraction = days_since
+
+        # Check time-based staleness
+        if days_since > self.config.max_days_since_contraction:
+            weeks_over = (days_since - self.config.max_days_since_contraction) / 5  # trading days per week
+            staleness_reasons.append(
+                f"Pattern is {days_since} days old (max {self.config.max_days_since_contraction})"
+            )
+            # Apply time decay penalty to freshness score
+            time_penalty = weeks_over * self.config.stale_penalty_per_week
+            pattern.freshness_score = max(0, 100 - time_penalty)
+        else:
+            pattern.freshness_score = 100.0
+
+        # Count pivot violations (price went above pivot then fell back)
+        pivot_violations = self._count_pivot_violations(
+            df, pattern.pivot_price, last_contraction_end_idx
+        )
+        pattern.pivot_violations = pivot_violations
+
+        if pivot_violations > 0:
+            staleness_reasons.append(
+                f"Pivot violated {pivot_violations} time(s) since last contraction"
+            )
+            # Apply violation penalty
+            violation_penalty = pivot_violations * 20
+            pattern.freshness_score = max(0, pattern.freshness_score - violation_penalty)
+
+        # Count support violations (close below support)
+        support_violations = self._count_support_violations(
+            df, pattern.support_price, last_contraction_end_idx
+        )
+        pattern.support_violations = support_violations
+
+        if support_violations > 0:
+            staleness_reasons.append(
+                f"Support broken {support_violations} time(s) since last contraction"
+            )
+            # Support break is more severe
+            pattern.freshness_score = max(0, pattern.freshness_score - support_violations * 30)
+
+        # Determine if pattern is stale
+        is_stale = (
+            days_since > self.config.max_days_since_contraction
+            or pivot_violations >= self.config.max_pivot_violations
+            or support_violations >= self.config.max_support_violations
+        )
+
+        pattern.is_stale = is_stale
+        pattern.staleness_reasons = staleness_reasons
+
+        # If support was violated, invalidate the pattern
+        if support_violations >= self.config.max_support_violations:
+            pattern.is_valid = False
+            if "Support violation invalidates pattern" not in pattern.validity_reasons:
+                pattern.validity_reasons.append("Support violation invalidates pattern")
+
+        return pattern
+
+    def _count_pivot_violations(
+        self,
+        df: pd.DataFrame,
+        pivot_price: float,
+        start_idx: int,
+    ) -> int:
+        """
+        Count how many times price crossed above pivot then fell back.
+
+        A pivot violation occurs when:
+        1. High goes above pivot + buffer
+        2. Subsequent close falls back below pivot
+
+        Args:
+            df: DataFrame with OHLCV data
+            pivot_price: The pivot price level
+            start_idx: Index to start checking from (after last contraction)
+
+        Returns:
+            Number of pivot violations
+        """
+        if start_idx >= len(df) - 1:
+            return 0
+
+        violations = 0
+        above_pivot = False
+        buffer = pivot_price * self.config.pivot_violation_buffer
+
+        # Get arrays for faster access
+        highs = df["High"].values
+        closes = df["Close"].values
+
+        # Check from day after last contraction to end of data
+        for i in range(start_idx + 1, len(df)):
+            high = float(highs[i])
+            close = float(closes[i])
+
+            if high > pivot_price + buffer:
+                above_pivot = True
+
+            if above_pivot and close < pivot_price:
+                violations += 1
+                above_pivot = False  # Reset for next potential violation
+
+        return violations
+
+    def _count_support_violations(
+        self,
+        df: pd.DataFrame,
+        support_price: float,
+        start_idx: int,
+    ) -> int:
+        """
+        Count how many times price closed below support.
+
+        Args:
+            df: DataFrame with OHLCV data
+            support_price: The support price level
+            start_idx: Index to start checking from (after last contraction)
+
+        Returns:
+            Number of support violations (closes below support)
+        """
+        if start_idx >= len(df) - 1:
+            return 0
+
+        violations = 0
+
+        # Get array for faster access
+        closes = df["Close"].values
+
+        # Check from day after last contraction to end of data
+        for i in range(start_idx + 1, len(df)):
+            close = float(closes[i])
+
+            if close < support_price:
+                violations += 1
+
+        return violations

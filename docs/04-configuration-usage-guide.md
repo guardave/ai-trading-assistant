@@ -2,9 +2,9 @@
 
 ## AI Trading Assistant
 
-**Version:** 1.0.0
-**Date:** 2025-11-28
-**Status:** Draft
+**Version:** 1.1.0
+**Date:** 2025-12-01
+**Status:** Updated with VCPAlertSystem
 
 ---
 
@@ -704,8 +704,199 @@ curl http://localhost:8000/health
 
 ---
 
-## 8. Document History
+## 8. VCPAlertSystem Configuration
+
+### 8.1 Overview
+
+The VCPAlertSystem is a three-stage alert system for VCP pattern detection, implemented in `src/vcp/`. It provides:
+
+- Pattern detection with swing-based analysis
+- Three-stage alerts (Contraction → Pre-Alert → Trade)
+- Multiple notification channels
+- Static PNG and interactive HTML chart generation
+
+### 8.2 Python Configuration
+
+```python
+from src.vcp import (
+    VCPAlertSystem,
+    SystemConfig,
+    DetectorConfig,
+    AlertConfig,
+)
+
+# Full configuration
+config = SystemConfig(
+    # Database settings
+    db_path="data/alerts.db",      # SQLite database path
+    use_memory_db=False,           # Use in-memory DB for testing
+
+    # Detector settings
+    detector_config=DetectorConfig(
+        swing_lookback=5,          # Bars for swing detection
+        min_contractions=2,        # Minimum contractions required
+        max_contraction_range=20.0, # Max first contraction %
+        lookback_days=120,         # Analysis window
+    ),
+
+    # Alert settings
+    alert_config=AlertConfig(
+        min_score_contraction=60.0,   # Min score for contraction alerts
+        min_score_pre_alert=60.0,     # Min score for pre-alerts
+        min_score_trade=60.0,         # Min score for trade alerts
+        pre_alert_proximity_pct=3.0,  # Pre-alert trigger distance
+        dedup_window_days=7,          # Deduplication window
+        alert_ttl_days=30,            # Alert expiration
+    ),
+
+    # Notifications
+    enable_console_notifications=True,
+    enable_log_notifications=True,
+)
+
+system = VCPAlertSystem(config)
+```
+
+### 8.3 Quick Start (Factory Function)
+
+```python
+from src.vcp import create_system
+
+# Simple configuration
+system = create_system(
+    db_path="data/alerts.db",
+    min_score=60.0,
+    pre_alert_proximity=3.0,
+    enable_console=True,
+)
+```
+
+### 8.4 Processing Symbols
+
+```python
+import yfinance as yf
+
+# Fetch data
+df = yf.download("AAPL", period="6mo")
+
+# Process single symbol
+alerts = system.process_symbol("AAPL", df)
+
+# Process multiple symbols
+def fetch_data(symbol):
+    return yf.download(symbol, period="6mo")
+
+results = system.process_symbols(
+    ["AAPL", "NVDA", "MSFT"],
+    fetch_data,
+    check_entry=True,
+)
+```
+
+### 8.5 Chart Generation
+
+#### Static PNG Charts (Matplotlib)
+
+```python
+# Generate single chart
+path = system.generate_chart(
+    symbol="AAPL",
+    df=df,
+    pattern=pattern,
+    alerts=alerts,
+    output_dir="charts",
+)
+
+# Batch generate from scan results
+paths = system.generate_charts_for_scan(
+    scan_results=results,
+    output_dir="charts",
+    max_charts=30,
+    by_alert_type=True,  # Organize in subdirs
+)
+```
+
+#### Interactive Dashboard (TradingView Lightweight Charts)
+
+```python
+from src.vcp import LightweightChartGenerator
+
+generator = LightweightChartGenerator(output_dir="charts")
+dashboard_path = generator.generate_dashboard(
+    scan_results=results,
+    filename="vcp_dashboard.html",
+)
+# Open in browser for interactive viewing
+```
+
+### 8.6 Notification Channels
+
+```python
+# Add webhook notifications
+system.add_webhook_handler(
+    name="slack",
+    url="https://hooks.slack.com/services/xxx",
+    headers={"Content-Type": "application/json"},
+)
+
+# Add callback handler
+def on_alert(alert, message):
+    print(f"New alert: {alert.symbol} - {alert.alert_type}")
+
+system.add_callback_handler(
+    name="custom",
+    callback=on_alert,
+)
+
+# Remove channel
+system.remove_notification_channel("slack")
+```
+
+### 8.7 Scan Script Usage
+
+```bash
+# Full S&P 500 scan with all outputs
+python temp/run_sp500_scan.py
+
+# Skip static PNG charts (faster)
+python temp/run_sp500_scan.py --no-charts
+
+# Skip interactive dashboard
+python temp/run_sp500_scan.py --no-dashboard
+
+# Limit charts per category
+python temp/run_sp500_scan.py --max-charts 10
+```
+
+### 8.8 Output Files
+
+| File | Description |
+|------|-------------|
+| `temp/sp500_scan_results.json` | Full scan results in JSON |
+| `temp/sp500_vcp_dashboard.html` | Interactive Lightweight Charts dashboard |
+| `temp/sp500_charts/trade_alerts/` | PNG charts for trade alerts |
+| `temp/sp500_charts/pre_alerts/` | PNG charts for pre-alerts |
+| `temp/sp500_charts/contraction_alerts/` | PNG charts for contraction alerts |
+| `temp/alerts_sp500.db` | SQLite alert database |
+
+### 8.9 Default Parameters Reference
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `swing_lookback` | 5 | Bars for swing high/low detection |
+| `min_contractions` | 2 | Minimum contractions for valid pattern |
+| `max_contraction_range` | 20.0 | Maximum first contraction percentage |
+| `lookback_days` | 120 | Days of price history to analyze |
+| `min_score_contraction` | 60.0 | Minimum score for contraction alert |
+| `pre_alert_proximity_pct` | 3.0 | Distance to pivot for pre-alert |
+| `dedup_window_days` | 7 | Days before re-alerting same symbol |
+| `alert_ttl_days` | 30 | Days until alert expires |
+
+---
+
+## 9. Document History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-11-28 | Claude | Initial draft |
+| 1.1.0 | 2025-12-01 | Claude | Added VCPAlertSystem configuration (Section 8) |

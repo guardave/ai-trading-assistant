@@ -119,6 +119,14 @@ class VCPPattern:
     # Metadata
     detection_date: datetime = field(default_factory=datetime.now)
 
+    # Staleness metrics (post-contraction analysis)
+    days_since_last_contraction: int = 0
+    pivot_violations: int = 0        # Times price crossed above pivot then fell back
+    support_violations: int = 0      # Times price closed below support
+    is_stale: bool = False
+    staleness_reasons: List[str] = field(default_factory=list)
+    freshness_score: float = 100.0   # 0-100, lower = more stale
+
     @property
     def num_contractions(self) -> int:
         """Number of contractions in the pattern."""
@@ -144,6 +152,13 @@ class VCPPattern:
             "pivot_price": self.pivot_price,
             "support_price": self.support_price,
             "detection_date": self.detection_date.isoformat(),
+            # Staleness metrics
+            "days_since_last_contraction": self.days_since_last_contraction,
+            "pivot_violations": self.pivot_violations,
+            "support_violations": self.support_violations,
+            "is_stale": self.is_stale,
+            "staleness_reasons": self.staleness_reasons,
+            "freshness_score": self.freshness_score,
         }
 
     @classmethod
@@ -160,6 +175,13 @@ class VCPPattern:
             pivot_price=data["pivot_price"],
             support_price=data["support_price"],
             detection_date=datetime.fromisoformat(data["detection_date"]),
+            # Staleness metrics (with defaults for backward compatibility)
+            days_since_last_contraction=data.get("days_since_last_contraction", 0),
+            pivot_violations=data.get("pivot_violations", 0),
+            support_violations=data.get("support_violations", 0),
+            is_stale=data.get("is_stale", False),
+            staleness_reasons=data.get("staleness_reasons", []),
+            freshness_score=data.get("freshness_score", 100.0),
         )
 
 

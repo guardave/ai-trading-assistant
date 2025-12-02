@@ -34,6 +34,7 @@ from .notifications import (
     ConsoleNotificationChannel,
     CallbackNotificationChannel,
 )
+from .chart import ChartGenerator, create_alert_chart
 
 
 logger = logging.getLogger(__name__)
@@ -450,6 +451,188 @@ class VCPAlertSystem:
     def repository(self) -> AlertRepository:
         """Get the alert repository."""
         return self._repository
+
+    # === Chart Generation ===
+
+    def generate_chart(
+        self,
+        symbol: str,
+        df: pd.DataFrame,
+        pattern: Optional[VCPPattern] = None,
+        alerts: Optional[List[Alert]] = None,
+        output_dir: str = "charts",
+        filename: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Generate a chart for a symbol with VCP pattern and alerts.
+
+        Args:
+            symbol: Stock symbol
+            df: DataFrame with OHLCV data
+            pattern: VCPPattern (detected if not provided)
+            alerts: List of alerts (empty list if not provided)
+            output_dir: Directory to save charts
+            filename: Optional custom filename
+
+        Returns:
+            Path to saved chart, or None if no pattern found
+        """
+        from pathlib import Path
+
+        # Detect pattern if not provided
+        if pattern is None:
+            pattern = self._detector.analyze(df, symbol)
+
+        if pattern is None:
+            logger.debug(f"No pattern found for {symbol}, skipping chart")
+            return None
+
+        # Use empty alerts list if not provided
+        if alerts is None:
+            alerts = []
+
+        # Get swing points for the chart
+        df_analysis = df.tail(self._detector.config.lookback_days).copy()
+        swing_highs = self._detector._find_swing_highs(df_analysis)
+        swing_lows = self._detector._find_swing_lows(df_analysis)
+
+        # Generate filename based on alert type
+        if filename is None:
+            if alerts:
+                if any(a.alert_type == AlertType.TRADE for a in alerts):
+                    alert_suffix = "trade"
+                elif any(a.alert_type == AlertType.PRE_ALERT for a in alerts):
+                    alert_suffix = "prealert"
+                else:
+                    alert_suffix = "contraction"
+            else:
+                alert_suffix = "pattern"
+            filename = f"{symbol}_{alert_suffix}.png"
+
+        # Create output directory
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        save_path = output_path / filename
+
+        # Generate chart
+        create_alert_chart(
+            symbol=symbol,
+            df=df_analysis,
+            pattern=pattern,
+            alerts=alerts,
+            swing_highs=swing_highs,
+            swing_lows=swing_lows,
+            save_path=save_path,
+        )
+
+        logger.info(f"Generated chart for {symbol}: {save_path}")
+        return str(save_path)
+
+    def generate_charts_for_scan(
+        self,
+        scan_results: List[dict],
+        output_dir: str = "charts",
+        max_charts: Optional[int] = None,
+        by_alert_type: bool = True,
+    ) -> List[str]:
+        """
+        Generate charts for scan results.
+
+        Args:
+            scan_results: List of dicts with 'symbol', 'df', 'pattern', 'alerts' keys
+            output_dir: Base directory for charts
+            max_charts: Maximum number of charts to generate per category
+            by_alert_type: Whether to organize charts by alert type in subdirs
+
+        Returns:
+            List of paths to saved charts
+        """
+        from pathlib import Path
+
+        saved_paths = []
+        base_path = Path(output_dir)
+
+        # Organize by alert type if requested
+        if by_alert_type:
+            trade_results = []
+            prealert_results = []
+            contraction_results = []
+
+            for result in scan_results:
+                alerts = result.get("alerts", [])
+                if any(a.alert_type == AlertType.TRADE for a in alerts):
+                    trade_results.append(result)
+                elif any(a.alert_type == AlertType.PRE_ALERT for a in alerts):
+                    prealert_results.append(result)
+                else:
+                    contraction_results.append(result)
+
+            # Generate trade alert charts
+            if trade_results:
+                paths = self._generate_category_charts(
+                    trade_results,
+                    base_path / "trade_alerts",
+                    max_charts,
+                )
+                saved_paths.extend(paths)
+
+            # Generate pre-alert charts
+            if prealert_results:
+                paths = self._generate_category_charts(
+                    prealert_results,
+                    base_path / "pre_alerts",
+                    max_charts,
+                )
+                saved_paths.extend(paths)
+
+            # Generate contraction alert charts
+            if contraction_results:
+                paths = self._generate_category_charts(
+                    contraction_results,
+                    base_path / "contraction_alerts",
+                    max_charts,
+                )
+                saved_paths.extend(paths)
+        else:
+            saved_paths = self._generate_category_charts(
+                scan_results,
+                base_path,
+                max_charts,
+            )
+
+        return saved_paths
+
+    def _generate_category_charts(
+        self,
+        results: List[dict],
+        output_dir,
+        max_charts: Optional[int] = None,
+    ) -> List[str]:
+        """Generate charts for a category of results."""
+        from pathlib import Path
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        saved_paths = []
+        for i, result in enumerate(results):
+            if max_charts and i >= max_charts:
+                break
+
+            try:
+                path = self.generate_chart(
+                    symbol=result["symbol"],
+                    df=result["df"],
+                    pattern=result.get("pattern"),
+                    alerts=result.get("alerts", []),
+                    output_dir=str(output_dir),
+                )
+                if path:
+                    saved_paths.append(path)
+            except Exception as e:
+                logger.error(f"Error generating chart for {result.get('symbol')}: {e}")
+
+        return saved_paths
 
 
 def create_system(

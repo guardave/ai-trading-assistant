@@ -50,6 +50,8 @@ from .notifications import (
     CallbackNotificationChannel,
 )
 from .alert_system import VCPAlertSystem, SystemConfig, create_system
+from .chart import ChartGenerator, create_alert_chart
+from .chart_lightweight import LightweightChartGenerator
 
 __all__ = [
     # Models
@@ -84,4 +86,8 @@ __all__ = [
     "VCPAlertSystem",
     "SystemConfig",
     "create_system",
+    # Chart
+    "ChartGenerator",
+    "create_alert_chart",
+    "LightweightChartGenerator",
 ]
